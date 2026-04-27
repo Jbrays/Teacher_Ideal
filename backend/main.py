@@ -132,8 +132,10 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
         if not user_info:
             raise HTTPException(status_code=401, detail="Token inválido o expirado")
         return user_info
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Error de autenticación: {str(e)}")
+        raise HTTPException(status_code=401, detail=f"Error interno de autenticación: {str(e)}")
 
 # --- 5. GOOGLE DRIVE ---
 @app.get("/api/drive/folders")
@@ -194,7 +196,7 @@ async def process_cvs(
             raise HTTPException(status_code=500, detail="Error conectando con Drive")
         
         file_types = ['application/pdf']
-        files = drive_service.list_files_in_folder(folder_id, file_types, recursive=False)
+        files = drive_service.list_files_in_folder(folder_id, file_types, recursive=True)
         print(f"Procesando {len(files)} CVs...")
 
         procesamiento = crud.create_procesamiento(db, folder_id=folder_id, folder_type='cvs', files_total=len(files))
