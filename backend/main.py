@@ -195,15 +195,23 @@ async def process_cvs(
         if not drive_service.build_service(google_token):
             raise HTTPException(status_code=500, detail="Error conectando con Drive")
         
+        all_files = drive_service.list_files_in_folder(folder_id, None, recursive=True)
+        if not all_files:
+            return {"success": True, "processed": 0, "message": "La carpeta está vacía."}
+            
         file_types = ['application/pdf']
-        files = drive_service.list_files_in_folder(folder_id, file_types, recursive=True)
+        files = [f for f in all_files if f.get('mimeType') in file_types]
+        
+        if not files:
+            mimes = set([f.get('mimeType') for f in all_files])
+            raise HTTPException(status_code=400, detail=f"No hay PDFs en la carpeta. Tipos encontrados: {mimes}")
+            
         print(f"Procesando {len(files)} CVs...")
 
         procesamiento = crud.create_procesamiento(db, folder_id=folder_id, folder_type='cvs', files_total=len(files))
         processed_cvs = []
         errors = []
 
-        # SEMÁFORO PARA CONTROLAR CONCURRENCIA (Reducido a 2 para máxima estabilidad)
         semaphore = asyncio.Semaphore(2)
 
         async def process_single_cv(idx, file):
@@ -288,8 +296,17 @@ async def process_syllabi(
         if not drive_service.build_service(google_token):
             raise HTTPException(status_code=500, detail="Error conectando con Drive")
         
+        all_files = drive_service.list_files_in_folder(folder_id, None, recursive=True)
+        if not all_files:
+            return {"success": True, "processed": 0, "message": "La carpeta está vacía."}
+            
         file_types = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-        files = drive_service.list_files_in_folder(folder_id, file_types, recursive=True)
+        files = [f for f in all_files if f.get('mimeType') in file_types]
+        
+        if not files:
+            mimes = set([f.get('mimeType') for f in all_files])
+            raise HTTPException(status_code=400, detail=f"No hay Word Docx en la carpeta. Tipos encontrados: {mimes}")
+            
         print(f"📚 Procesando {len(files)} sílabos...")
 
         procesamiento = crud.create_procesamiento(db, folder_id=folder_id, folder_type='syllabi', files_total=len(files))
@@ -405,7 +422,17 @@ async def process_schedules(
             raise HTTPException(status_code=500, detail="Error conectando con Drive")
         
         # Buscar PDFs de horarios
-        files = drive_service.list_files_in_folder(folder_id, ['application/pdf'], recursive=True)
+        all_files = drive_service.list_files_in_folder(folder_id, None, recursive=True)
+        if not all_files:
+            return {"success": True, "processed": 0, "message": "La carpeta está vacía."}
+            
+        file_types = ['application/pdf']
+        files = [f for f in all_files if f.get('mimeType') in file_types]
+        
+        if not files:
+            mimes = set([f.get('mimeType') for f in all_files])
+            raise HTTPException(status_code=400, detail=f"No hay PDFs en la carpeta. Tipos encontrados: {mimes}")
+            
         print(f"📅 Procesando {len(files)} horarios...")
 
         procesamiento = crud.create_procesamiento(db, folder_id=folder_id, folder_type='schedules', files_total=len(files))

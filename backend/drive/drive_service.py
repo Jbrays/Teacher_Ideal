@@ -129,11 +129,11 @@ class DriveService:
             return all_files
             
         except HttpError as e:
-            print(f"❌ Error listando archivos: {e}")
-            return []
+            print(f"❌ Error listando archivos (HTTP): {e}")
+            raise Exception(f"Error de permisos o conexión con Drive: {e}")
         except Exception as e:
-            print(f"❌ Error inesperado: {e}")
-            return []
+            print(f"❌ Error inesperado listando archivos: {e}")
+            raise Exception(f"Error inesperado al leer Drive: {e}")
     
     def get_file_metadata(self, file_id: str) -> Optional[Dict[str, Any]]:
         """
