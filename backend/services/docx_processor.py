@@ -23,7 +23,7 @@ class DOCXProcessor:
     def __init__(self):
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-        self.model_name = "gemini-2.0-flash-001"
+        self.model_name = "gemini-1.5-flash-002"
 
         try:
             vertexai.init(project=self.project_id, location=self.location)

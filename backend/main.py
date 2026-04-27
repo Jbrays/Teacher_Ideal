@@ -212,6 +212,7 @@ async def process_cvs(
         processed_cvs = []
         errors = []
 
+        db_lock = asyncio.Lock()
         semaphore = asyncio.Semaphore(2)
 
         async def process_single_cv(idx, file):
@@ -242,9 +243,11 @@ async def process_cvs(
                     cv_info = await loop.run_in_executor(None, pdf_processor.extract_cv_info, file_content, file['name'])
                     
                     if cv_info['success']:
-                        docente_id = pdf_processor.save_docente_to_db(db, cv_info, file['id'])
+                        async with db_lock:
+                            docente_id = pdf_processor.save_docente_to_db(db, cv_info, file['id'])
+                            if docente_id:
+                                crud.update_procesamiento_progress(db, procesamiento.id, idx + 1)
                         if docente_id:
-                            crud.update_procesamiento_progress(db, procesamiento.id, idx + 1)
                             return {'success': True, 'docente_id': docente_id}
                         else:
                             return {'error': 'Error al guardar en BD', 'file': file}
@@ -313,6 +316,7 @@ async def process_syllabi(
         processed_cursos = []
         errors = []
 
+        db_lock = asyncio.Lock()
         semaphore = asyncio.Semaphore(2)
 
         async def process_single_syllabus(idx, file):
@@ -323,7 +327,8 @@ async def process_syllabi(
                     
                     # OPTIMIZACIÓN: Verificar si ya existe en BD para saltar descarga y AI
                     # Esto permite reanudar procesos interrumpidos sin gastar quota
-                    existing_curso = await loop.run_in_executor(None, crud.get_curso_by_drive_id, db, file['id'])
+                    async with db_lock:
+                        existing_curso = await loop.run_in_executor(None, crud.get_curso_by_drive_id, db, file['id'])
                     if existing_curso:
                         print(f"    ⏩ Saltando {file['name']} (Ya procesado)")
                         return {'success': True, 'curso_id': existing_curso.id}
@@ -351,9 +356,11 @@ async def process_syllabi(
                     syllabus_info = await loop.run_in_executor(None, docx_processor.extract_syllabus_info, file_content, file['name'])
                     
                     if syllabus_info['success']:
-                        curso_id = docx_processor.save_curso_to_db(db, syllabus_info, file['id'])
+                        async with db_lock:
+                            curso_id = docx_processor.save_curso_to_db(db, syllabus_info, file['id'])
+                            if curso_id:
+                                crud.update_procesamiento_progress(db, procesamiento.id, idx + 1)
                         if curso_id:
-                            crud.update_procesamiento_progress(db, procesamiento.id, idx + 1)
                             return {'success': True, 'curso_id': curso_id}
                         else:
                             return {'error': 'Error al guardar en BD', 'file': file}
@@ -440,6 +447,7 @@ async def process_schedules(
         total_records = 0
         errors = []
 
+        db_lock = asyncio.Lock()
         semaphore = asyncio.Semaphore(2)
 
         async def process_single_schedule(idx, file):
@@ -484,9 +492,10 @@ async def process_schedules(
                         extracted_data = await loop.run_in_executor(None, schedule_processor.extract_schedule_data, real_name_path)
                         
                         # Guardar en BD (Síncrono)
-                        records_saved = schedule_processor.save_history_to_db(db, extracted_data)
+                        async with db_lock:
+                            records_saved = schedule_processor.save_history_to_db(db, extracted_data)
+                            crud.update_procesamiento_progress(db, procesamiento.id, idx + 1)
                         
-                        crud.update_procesamiento_progress(db, procesamiento.id, idx + 1)
                         return {'records': records_saved}
                         
                     finally:
