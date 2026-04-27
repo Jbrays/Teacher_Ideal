@@ -35,7 +35,7 @@ class ScheduleProcessor:
         # Configuración de Vertex AI
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-        self.model_name = "gemini-1.5-flash-002"
+        self.model_name = "gemini-2.5-flash"
         
         try:
             vertexai.init(project=self.project_id, location=self.location)
