@@ -183,7 +183,7 @@ async def list_folder_files(folder_id: str, authorization: Optional[str] = Heade
 @app.post("/api/drive/process-cvs/{folder_id}")
 async def process_cvs(
     folder_id: str, 
-    google_token: Optional[str] = Header(None, alias="X-Google-Token"),
+    google_token: Optional[str] = Header(None, alias="X-Drive-Token"),
     user: dict = Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
@@ -276,7 +276,7 @@ async def process_cvs(
 @app.post("/api/drive/process-syllabi/{folder_id}")
 async def process_syllabi(
     folder_id: str, 
-    google_token: Optional[str] = Header(None, alias="X-Google-Token"),
+    google_token: Optional[str] = Header(None, alias="X-Drive-Token"),
     user: dict = Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
@@ -391,7 +391,7 @@ async def process_syllabi(
 @app.post("/api/drive/process-schedules/{folder_id}")
 async def process_schedules(
     folder_id: str, 
-    google_token: Optional[str] = Header(None, alias="X-Google-Token"),
+    google_token: Optional[str] = Header(None, alias="X-Drive-Token"),
     user: dict = Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):

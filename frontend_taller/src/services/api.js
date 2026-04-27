@@ -21,7 +21,7 @@ function getAuthHeaders(googleToken = null) {
   };
 
   if (googleToken) {
-    headers['X-Google-Token'] = googleToken;
+    headers['X-Drive-Token'] = googleToken;
   }
 
   return headers;
