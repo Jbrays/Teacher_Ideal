@@ -56,6 +56,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:8080",
         "http://localhost:8000",
+        "https://semilleros-493300.web.app",
+        "https://semilleros-493300.firebaseapp.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],

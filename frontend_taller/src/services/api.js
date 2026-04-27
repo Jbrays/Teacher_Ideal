@@ -1,6 +1,6 @@
 const API_CONFIG = {
   development: { baseURL: 'http://localhost:8000' },
-  production: { baseURL: 'https://tu-api-produccion.com' }
+  production: { baseURL: 'https://teacher-ideal-121734839794.us-central1.run.app' }
 };
 
 const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
