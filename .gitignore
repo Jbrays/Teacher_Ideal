@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Database
+*.db
+*.sqlite3
+
+# Credentials & Secrets
+firebase-credentials.json
+vertex_credenciales.json
+taller-app-*.json
+
+# Logs & Temporary Files
+*.log
+*.pdf
+
+# Personal/Debug Scripts
+debug_*.py
+inspect_*.py
+check_*.py
+test_*.py
+reset_all.py
+clear_history.py
+list_models.py
+scripts/
+
+# Node/Frontend
+node_modules/
+dist/
+.DS_Store

@@ -1,0 +1,31 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Frontend
+frontend_taller/
+node_modules/
+dist/
+.vite/
+
+# Base de datos local
+*.db
+docentes_system.db
+
+# Archivos de entorno y credenciales
+.env
+*.json
+
+# Git
+.git/
+.gitignore
+
+# IDEs
+.vscode/
+.idea/
