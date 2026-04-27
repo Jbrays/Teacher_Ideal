@@ -210,12 +210,18 @@ export default {
         if (type === 'cvs') {
           result = await processCVs(folderState.value.cvs.id, token);
           processStatus.value = `✅ CVs procesados: ${result.processed || 0}`;
+          if (result.message) processStatus.value += `\nℹ️ ${result.message}`;
+          if (result.errors) processStatus.value += `\n⚠️ Errores: ${result.errors}`;
         } else if (type === 'syllabi') {
           result = await processSyllabi(folderState.value.syllabi.id, token);
           processStatus.value = `✅ Sílabos procesados: ${result.processed || 0}`;
+          if (result.message) processStatus.value += `\nℹ️ ${result.message}`;
+          if (result.errors) processStatus.value += `\n⚠️ Errores: ${result.errors}`;
         } else if (type === 'schedules') {
           result = await processSchedules(folderState.value.schedules.id, token);
-          processStatus.value = `✅ Horarios procesados: ${result.total_history_records || 0} registros`;
+          processStatus.value = `✅ Horarios procesados: ${result.processed || result.total_history_records || 0} registros`;
+          if (result.message) processStatus.value += `\nℹ️ ${result.message}`;
+          if (result.errors) processStatus.value += `\n⚠️ Errores: ${result.errors}`;
         }
 
         // Refrescar datos en el store si es necesario (aunque idealmente el backend ya actualizó la BD)

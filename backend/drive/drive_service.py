@@ -91,7 +91,9 @@ class DriveService:
                 q=query,
                 pageSize=1000,
                 fields="files(id, name, mimeType, size, createdTime, modifiedTime, parents)",
-                orderBy="name"
+                orderBy="name",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
             ).execute()
             
             files = results.get('files', [])
@@ -114,7 +116,9 @@ class DriveService:
                 subfolder_results = self.service.files().list(
                     q=subfolder_query,
                     pageSize=100,
-                    fields="files(id, name)"
+                    fields="files(id, name)",
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True
                 ).execute()
                 
                 subfolders = subfolder_results.get('files', [])
