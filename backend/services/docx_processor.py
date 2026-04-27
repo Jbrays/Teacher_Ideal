@@ -172,6 +172,10 @@ class DOCXProcessor:
                 return curso.id
         except Exception as e:
             logger.error(f"Error BD Curso: {e}")
+            try:
+                db.rollback()
+            except:
+                pass
             return None
 
 docx_processor = DOCXProcessor()

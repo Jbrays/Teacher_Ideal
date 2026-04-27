@@ -165,6 +165,10 @@ class PDFProcessor:
                 
         except Exception as e:
             logger.error(f"Error guardando docente en BD: {e}")
+            try:
+                db.rollback()
+            except:
+                pass
             return None
 
 pdf_processor = PDFProcessor()

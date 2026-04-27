@@ -255,6 +255,10 @@ async def process_cvs(
                         return {'error': cv_info.get('error'), 'file': file}
                         
                 except Exception as e:
+                    try:
+                        db.rollback()
+                    except:
+                        pass
                     return {'error': str(e), 'file': file}
 
         # Lanzar tareas
@@ -369,6 +373,10 @@ async def process_syllabi(
                         
                 except Exception as e:
                     print(f"    ❌ Error en {file['name']}: {e}")
+                    try:
+                        db.rollback()
+                    except:
+                        pass
                     return {'error': str(e), 'file': file}
 
         tasks = [process_single_syllabus(i, f) for i, f in enumerate(files)]
@@ -504,6 +512,10 @@ async def process_schedules(
                         
                 except Exception as e:
                     print(f"  ❌ Error en horario {file['name']}: {e}")
+                    try:
+                        db.rollback()
+                    except:
+                        pass
                     return {'error': str(e), 'file': file}
 
         tasks = [process_single_schedule(i, f) for i, f in enumerate(files)]
