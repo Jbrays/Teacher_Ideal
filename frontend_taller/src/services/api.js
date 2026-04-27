@@ -14,7 +14,7 @@ export function apiURL(endpoint) {
 // Helper para obtener el token de Firebase (y Google opcional)
 function getAuthHeaders(googleToken = null) {
   const firebaseToken = localStorage.getItem('firebase_id_token');
-  
+
   const headers = {
     'Authorization': `Bearer ${firebaseToken}`,
     'Content-Type': 'application/json'
@@ -23,7 +23,7 @@ function getAuthHeaders(googleToken = null) {
   if (googleToken) {
     headers['X-Google-Token'] = googleToken;
   }
-  
+
   return headers;
 }
 
@@ -36,7 +36,7 @@ export async function fetchCursos() {
   try {
     const response = await fetch(apiURL('/api/cursos'), {
       method: 'GET',
-      headers: getAuthHeaders() 
+      headers: getAuthHeaders()
     });
 
     if (!response.ok) {
@@ -67,7 +67,7 @@ export async function fetchRecommendations(cursoId, topK = 100) {
     }
 
     const result = await response.json();
-    
+
     if (!result.success) {
       throw new Error('La API reportó un error al obtener recomendaciones.');
     }

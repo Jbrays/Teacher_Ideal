@@ -9,7 +9,9 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./docentes_system.db")
 # Crear engine
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+    pool_pre_ping=True,
+    pool_recycle=300
 )
 
 # Crear SessionLocal
