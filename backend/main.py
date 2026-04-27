@@ -605,8 +605,10 @@ async def debug_curso_ner_profile(curso_id: int, db: Session = Depends(get_db)):
         "texto_completo_original (preview)": full_text[:1000] if full_text else "N/A"
     }
 
-# --- EJECUCIÓN LOCAL ---
+# --- EJECUCIÓN LOCAL O CLOUD RUN ---
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Servidor iniciando en http://localhost:8000 ...")
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    # Cloud Run inyecta la variable de entorno PORT, por defecto usamos 8080 si no existe
+    port = int(os.environ.get("PORT", 8080))
+    print(f"🚀 Servidor iniciando en http://0.0.0.0:{port} ...")
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=port)

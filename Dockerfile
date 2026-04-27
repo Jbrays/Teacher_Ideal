@@ -23,8 +23,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiamos todo el código fuente del backend al contenedor
 COPY backend/ ./backend/
 
-# Exponemos el puerto 8080, que es el puerto por defecto que usa Google Cloud Run
+# Exponemos el puerto (informativo)
 EXPOSE 8080
 
-# Comando para ejecutar la aplicación con Uvicorn
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Comando para ejecutar la aplicación con Uvicorn usando el puerto dinámico de Cloud Run
+CMD uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8080}
