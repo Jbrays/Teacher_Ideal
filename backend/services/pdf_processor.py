@@ -19,7 +19,7 @@ class PDFProcessor:
     def __init__(self):
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-        self.model_name = "gemini-2.5-flash"
+        self.model_name = "gemini-3.1-flash-lite-preview"
 
         try:
             # En Cloud Run o App Engine usa las credenciales por defecto de la aplicación (ADC)
