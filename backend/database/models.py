@@ -8,22 +8,19 @@ class Docente(Base):
     __tablename__ = "docentes"
     
     id = Column(Integer, primary_key=True, index=True)
+    id_upao = Column(String, unique=True, index=True, nullable=True) # ID extraído de los horarios
     drive_file_id = Column(String, unique=True, index=True)
     nombre = Column(String, nullable=False, index=True)
     email = Column(String, nullable=True)
-    areas = Column(JSON, default=list)
     grado = Column(String, nullable=True)
-    herramientas = Column(JSON, default=list)
-    lenguajes = Column(JSON, default=list)
-    metodologias = Column(JSON, default=list)
-    contenidos = Column(JSON, default=list)
-    cv_text = Column(Text, nullable=True)
+    entidades_clave = Column(JSON, default=list) # Reemplaza a las 5 columnas anteriores
+    perfil_sintetico = Column(Text, nullable=True) # Reemplaza a cv_text
     embedding_version = Column(String, default="v1.0")
     embedding_hash = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    historiales = relationship("Historial", back_populates="docente")
-    recomendaciones_cache = relationship("RecomendacionCache", back_populates="docente")
+    historiales = relationship("Historial", back_populates="docente", cascade="all, delete-orphan")
+    recomendaciones_cache = relationship("RecomendacionCache", back_populates="docente", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Docente(id={self.id}, nombre='{self.nombre}')>"
@@ -38,20 +35,15 @@ class Curso(Base):
     codigo = Column(String, nullable=True)
     ciclo = Column(Integer, nullable=True, default=1, index=True)
     descripcion = Column(Text, nullable=True)
-    objetivos = Column(JSON, default=list)
-    syllabus_text = Column(Text, nullable=True)
-    areas = Column(JSON, default=list)
-    herramientas = Column(JSON, default=list)
-    lenguajes = Column(JSON, default=list)
-    metodologias = Column(JSON, default=list)
-    contenidos = Column(JSON, default=list)
+    entidades_clave = Column(JSON, default=list)
+    perfil_sintetico = Column(Text, nullable=True) # Reemplaza a syllabus_text
     embedding_version = Column(String, default="v1.0")
     embedding_hash = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    historiales = relationship("Historial", back_populates="curso")
-    recomendaciones = relationship("Recomendacion", back_populates="curso")
-    recomendaciones_cache = relationship("RecomendacionCache", back_populates="curso")
+    historiales = relationship("Historial", back_populates="curso", cascade="all, delete-orphan")
+    recomendaciones = relationship("Recomendacion", back_populates="curso", cascade="all, delete-orphan")
+    recomendaciones_cache = relationship("RecomendacionCache", back_populates="curso", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Curso(id={self.id}, nombre='{self.nombre}', ciclo={self.ciclo})>"
@@ -61,8 +53,8 @@ class Historial(Base):
     __tablename__ = "historiales"
     
     id = Column(Integer, primary_key=True, index=True)
-    docente_id = Column(Integer, ForeignKey("docentes.id"), nullable=False)
-    curso_id = Column(Integer, ForeignKey("cursos.id"), nullable=False)
+    docente_id = Column(Integer, ForeignKey("docentes.id", ondelete="CASCADE"), nullable=False)
+    curso_id = Column(Integer, ForeignKey("cursos.id", ondelete="CASCADE"), nullable=False)
     periodo = Column(String, nullable=False)
     resultado = Column(String, nullable=True)
     veces = Column(Integer, default=1)
@@ -101,14 +93,13 @@ class RecomendacionCache(Base):
     __tablename__ = "recomendaciones_cache"
     
     id = Column(Integer, primary_key=True, index=True)
-    curso_id = Column(Integer, ForeignKey("cursos.id"), nullable=False)
-    docente_id = Column(Integer, ForeignKey("docentes.id"), nullable=False)
+    curso_id = Column(Integer, ForeignKey("cursos.id", ondelete="CASCADE"), nullable=False)
+    docente_id = Column(Integer, ForeignKey("docentes.id", ondelete="CASCADE"), nullable=False)
     score_combinado = Column(Float, nullable=False)
     score_historico = Column(Float, default=0.0)
     score_semantico = Column(Float, nullable=False)
     evidencias = Column(JSON, default=list)
     shap_explanations = Column(JSON, default=dict)
-    ranking_position = Column(Integer, nullable=False)
     version_algoritmo = Column(String(50), default="sbert_v1.1")
     embed_version = Column(String(50), default="v1.1")
     fecha_generada = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -122,21 +113,19 @@ class RecomendacionCache(Base):
     )
 
     def __repr__(self):
-        return f"<RecomendacionCache(curso_id={self.curso_id}, docente_id={self.docente_id}, rank={self.ranking_position}, score={self.score_combinado:.2f})>"
+        return f"<RecomendacionCache(curso_id={self.curso_id}, docente_id={self.docente_id}, score={self.score_combinado:.2f})>"
 
 
-class Procesamiento(Base):
-    __tablename__ = "procesamientos"
+class WebhookLog(Base):
+    __tablename__ = "webhook_logs"
     
     id = Column(Integer, primary_key=True, index=True)
-    folder_id = Column(String, nullable=False)
-    folder_type = Column(String, nullable=False)
-    status = Column(String, nullable=False)
-    files_processed = Column(Integer, default=0)
-    files_total = Column(Integer, default=0)
+    drive_file_id = Column(String, nullable=False, index=True)
+    evento_tipo = Column(String, nullable=False) # CREATE, UPDATE, DELETE
+    entidad = Column(String, nullable=False)     # CV, SILABO, HORARIO
+    status = Column(String, nullable=False)      # SUCCESS, FAILED
     error_message = Column(Text, nullable=True)
-    started_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<Procesamiento(id={self.id}, type='{self.type}', status='{self.status}')>"
+        return f"<WebhookLog(id={self.id}, evento='{self.evento_tipo}', status='{self.status}')>"

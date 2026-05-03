@@ -9,11 +9,7 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-try:
-    from .ner_service import extract_entities
-except ImportError:
-    logger.warning("No se pudo importar 'ner_service'.")
-    def extract_entities(text): return {}
+# Se eliminó la importación de ner_service por la arquitectura de LLM Unificado
 
 class PDFProcessor:
     def __init__(self):
@@ -45,14 +41,15 @@ class PDFProcessor:
             return {}
 
         prompt = """
-        Analiza este PDF (Curriculum Vitae) y devuelve un JSON con el siguiente formato.
-        IMPORTANTE: El campo 'texto_optimizado' debe ser un resumen denso de habilidades, experiencia y estudios, NO una transcripción completa. Máximo 3000 caracteres.
+        Analiza este PDF (Curriculum Vitae) y devuelve un JSON estricto con el siguiente formato.
+        IMPORTANTE: 'perfil_sintetico' debe ser un resumen denso y redactado de habilidades, experiencia y estudios.
+        'entidades_clave' debe ser una lista de strings con tecnologías, metodologías o áreas de conocimiento detectadas.
         {
             "nombre": "string",
             "email": "string",
             "grado": "string",
-            "resumen": "string (breve perfil profesional)",
-            "texto_optimizado": "string (resumen de keywords y experiencia para búsqueda vectorial)"
+            "perfil_sintetico": "string",
+            "entidades_clave": ["string", "string"]
         }
         """
 
@@ -114,8 +111,8 @@ class PDFProcessor:
             if not name and filename:
                 name = filename.replace(".pdf", "").replace("_", " ").strip().title()
 
-            final_text = ai_data.get("texto_optimizado", "") or ""
-            entities = extract_entities(final_text)
+            final_text = ai_data.get("perfil_sintetico", "")
+            entities = ai_data.get("entidades_clave", [])
 
             return {
                 "success": True,
@@ -123,13 +120,8 @@ class PDFProcessor:
                 "name": name,
                 "email": email,
                 "grado": grado,
-                "areas": entities.get("areas", []),
-                "herramientas": entities.get("herramientas", []),
-                "lenguajes": entities.get("lenguajes", []),
-                "metodologias": entities.get("metodologias", []),
-                "contenidos": entities.get("contenidos", []),
-                "text_preview": final_text[:500],
-                "full_text": final_text
+                "entidades_clave": entities,
+                "perfil_sintetico": final_text
             }
 
         except Exception as e:
@@ -146,12 +138,8 @@ class PDFProcessor:
                 "nombre": cv_info.get("name"),
                 "email": cv_info.get("email"),
                 "grado": cv_info.get("grado"),
-                "areas": cv_info.get("areas", []),
-                "herramientas": cv_info.get("herramientas", []),
-                "lenguajes": cv_info.get("lenguajes", []),
-                "metodologias": cv_info.get("metodologias", []),
-                "contenidos": cv_info.get("contenidos", []),
-                "cv_text": cv_info.get("full_text", "")
+                "entidades_clave": cv_info.get("entidades_clave", []),
+                "perfil_sintetico": cv_info.get("perfil_sintetico", "")
             }
 
             if existing:

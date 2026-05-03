@@ -9,10 +9,13 @@ from backend.database import crud
 from backend.database.models import Curso, Docente
 from backend.services.explanation_model import ExplanationModel
 
-# Cargar modelo SBERT
+import torch
+
+# Cargar modelo SBERT optimizado
 try:
-    model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
-except Exception:
+    model = SentenceTransformer('BAAI/bge-m3', model_kwargs={"torch_dtype": torch.float16})
+except Exception as e:
+    print(f"Error cargando SBERT: {e}")
     model = None
 
 class RecommendationEngine:
@@ -20,69 +23,22 @@ class RecommendationEngine:
         self.model = model
         self.explanation_model = ExplanationModel()
 
-    def _create_profile_text(self, *, areas, lenguajes, herramientas, metodologias, contenidos=None, descripcion="", texto_adicional="") -> str:
-        parts = []
-        if descripcion:
-            parts.append(f"Descripción: {descripcion}")
-        if texto_adicional:
-            parts.append(f"Contexto general: {texto_adicional[:3000]}")
-        
-        entity_text = []
-        if areas:
-            entity_text.append(f"Áreas de especialización: {', '.join(areas)}.")
-        if lenguajes:
-            entity_text.append(f"Lenguajes de programación: {', '.join(lenguajes)}.")
-        if herramientas:
-            entity_text.append(f"Herramientas y tecnologías: {', '.join(herramientas)}.")
-        if metodologias:
-            entity_text.append(f"Metodologías: {', '.join(metodologias)}.")
-        if contenidos:
-            entity_text.append(f"Contenidos temáticos: {', '.join(contenidos)}.")
-            
-        if entity_text:
-            profile = " ".join(entity_text)
-            parts.append(f"Perfil principal: {profile}")
-            parts.append(f"Competencias: {profile}")
-            
-        return " ".join(parts)
-
     def create_curso_text(self, curso: Curso) -> str:
         nombre_curso = f"Curso: {curso.nombre}. " * 3
-        # Verificar si el modelo tiene 'contenidos', si no, usar lista vacía
-        contenidos = curso.contenidos if hasattr(curso, 'contenidos') else []
-        
-        profile = self._create_profile_text(
-            areas=curso.areas,
-            lenguajes=curso.lenguajes,
-            herramientas=curso.herramientas,
-            metodologias=curso.metodologias,
-            contenidos=contenidos,
-            descripcion=curso.descripcion
-        )
-        return nombre_curso + profile
+        perfil = curso.perfil_sintetico or ""
+        entidades = ", ".join(curso.entidades_clave) if curso.entidades_clave else ""
+        return f"{nombre_curso} {perfil} Tecnologías y temas clave: {entidades}"
 
     def create_docente_text(self, docente: Docente) -> str:
-        # Verificar si el modelo tiene 'contenidos', si no, usar lista vacía
-        contenidos = docente.contenidos if hasattr(docente, 'contenidos') else []
-        
-        return self._create_profile_text(
-            areas=docente.areas,
-            lenguajes=docente.lenguajes,
-            herramientas=docente.herramientas,
-            metodologias=docente.metodologias,
-            contenidos=contenidos,
-            texto_adicional=docente.cv_text
-        )
+        perfil = docente.perfil_sintetico or ""
+        entidades = ", ".join(docente.entidades_clave) if docente.entidades_clave else ""
+        return f"{perfil} Habilidades y experiencia técnica: {entidades}"
 
     def _calculate_ner_evidencias(self, curso: Curso, docente: Docente) -> Dict:
-        curso_contenidos = getattr(curso, 'contenidos', []) or []
-        docente_contenidos = getattr(docente, 'contenidos', []) or []
+        curso_entidades = set(curso.entidades_clave) if curso.entidades_clave else set()
+        docente_entidades = set(docente.entidades_clave) if docente.entidades_clave else set()
         return {
-            "areas": list(set(curso.areas).intersection(set(docente.areas))),
-            "lenguajes": list(set(curso.lenguajes).intersection(set(docente.lenguajes))),
-            "herramientas": list(set(curso.herramientas).intersection(set(docente.herramientas))),
-            "metodologias": list(set(curso.metodologias).intersection(set(docente.metodologias))),
-            "contenidos": list(set(curso_contenidos).intersection(set(docente_contenidos))),
+            "entidades_clave": list(curso_entidades.intersection(docente_entidades))
         }
 
     def get_embedding_for_text(self, text: str) -> np.ndarray:
@@ -117,10 +73,7 @@ class RecommendationEngine:
                             'nombre': docente.nombre,
                             'email': docente.email,
                             'grado': docente.grado,
-                            'areas': docente.areas,
-                            'herramientas': docente.herramientas,
-                            'lenguajes': docente.lenguajes,
-                            'metodologias': docente.metodologias,
+                            'entidades_clave': docente.entidades_clave,
                             'score_combinado': round(cache_entry.score_combinado * 100, 2),
                             'score_historico': round(cache_entry.score_historico * 100, 2),
                             'score_semantico': round(cache_entry.score_semantico * 100, 2),
@@ -211,11 +164,7 @@ class RecommendationEngine:
             for result in top_results:
                 evidencias = result['evidencias']
                 training_data.append({
-                    'area_match_count': len(evidencias.get('areas', [])),
-                    'lenguaje_match_count': len(evidencias.get('lenguajes', [])),
-                    'herramienta_match_count': len(evidencias.get('herramientas', [])),
-                    'metodologia_match_count': len(evidencias.get('metodologias', [])),
-                    'contenido_match_count': len(evidencias.get('contenidos', [])),
+                    'entidades_match_count': len(evidencias.get('entidades_clave', [])),
                     'history_score': result['score_historico'],
                     'semantic_score': result['score_semantico'], # ADDED: Crucial for SHAP to explain the score
                     'target': result['score_combinado']
@@ -246,10 +195,7 @@ class RecommendationEngine:
                     'nombre': docente.nombre,
                     'email': docente.email,
                     'grado': docente.grado,
-                    'areas': docente.areas,
-                    'herramientas': docente.herramientas,
-                    'lenguajes': docente.lenguajes,
-                    'metodologias': docente.metodologias,
+                    'entidades_clave': docente.entidades_clave,
                     'score_combinado': round(result['score_combinado'] * 100, 2),
                     'score_historico': round(result['score_historico'] * 100, 2),
                     'score_semantico': round(result['score_semantico'] * 100, 2),

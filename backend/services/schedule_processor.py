@@ -19,11 +19,9 @@ logger = logging.getLogger(__name__)
 # Usamos un bloque try para que el procesador no rompa la app si falla la importación al inicio.
 try:
     from backend.database.models import Historial, Docente, Curso
-    from sentence_transformers import SentenceTransformer, util
 except ImportError:
-    logger.critical("Error crítico: No se pudieron importar los modelos de BD (Historial, Docente, Curso) o SentenceTransformer.")
+    logger.critical("Error crítico: No se pudieron importar los modelos de BD (Historial, Docente, Curso).")
     Historial, Docente, Curso = None, None, None
-    SentenceTransformer, util = None, None
 
 class ScheduleProcessor:
     """
@@ -123,20 +121,20 @@ class ScheduleProcessor:
                     
                     prompt = f"""
                     Analiza este TEXTO extraído de varias páginas de un horario universitario.
-                    Extrae TODAS las asignaciones de cursos a docentes.
+                    Extrae TODAS las asignaciones de cursos a docentes basándote EXCLUSIVAMENTE en códigos.
                     
                     TEXTO DEL LOTE:
                     {batch_text}
                     
                     Reglas:
                     1. Ignora "STAFF" o "DOCENTE" genérico.
-                    2. Extrae CÓDIGO (ej: "ICSI424") y NOMBRE del curso.
-                    3. Extrae NOMBRE del docente.
+                    2. Extrae estrictamente el CÓDIGO institucional del curso (ej: "ICSI424").
+                    3. Extrae estrictamente el CÓDIGO ÚNICO del docente (ID_DOC).
                     4. IGNORA el periodo del texto, usaremos uno global.
                     
-                    Salida JSON (Lista de objetos):
+                    Salida JSON (Lista de objetos estricta):
                     [
-                        {{"curso_codigo": "ICSI424", "curso_nombre": "GESTION...", "docente_nombre": "JUAN PEREZ"}}
+                        {{"curso_codigo": "ICSI424", "docente_id": "000123"}}
                     ]
                     """
                     
@@ -169,7 +167,7 @@ class ScheduleProcessor:
                                 
                             # Procesar y limpiar datos del lote
                             for d in data:
-                                if not d.get('docente_nombre') or not d.get('curso_nombre'):
+                                if not d.get('docente_id') or not d.get('curso_codigo'):
                                     continue
                                 
                                 # FORZAR PERIODO GLOBAL
@@ -220,28 +218,20 @@ class ScheduleProcessor:
             all_docentes = db.query(Docente).all()
             all_cursos = db.query(Curso).all()
             
-            # Convertimos a listas de diccionarios con nombres normalizados para búsqueda rápida
-            # Esto evita recalcular la normalización en cada iteración del bucle principal
-            docentes_cache = [(d, self._normalize_docente_name(d.nombre)) for d in all_docentes]
-            cursos_cache = [(c, self._normalize_curso_name(c.nombre)) for c in all_cursos]
+            # Convertimos a diccionarios para búsqueda O(1) usando los códigos exactos
+            docentes_cache = {d.id_upao: d for d in all_docentes if d.id_upao}
+            cursos_cache = {c.codigo: c for c in all_cursos if c.codigo}
             
-            logger.info(f"📚 Catálogo cargado: {len(docentes_cache)} docentes, {len(cursos_cache)} cursos.")
+            logger.info(f"📚 Catálogo indexado: {len(docentes_cache)} docentes con ID_DOC, {len(cursos_cache)} cursos con código.")
 
-            historial_entries = [] # Inicializar lista
-
-            # --- 2. PROCESAMIENTO Y AGREGACIÓN ---
-            # Usamos un diccionario para agregar conteos en memoria antes de tocar la BD
-            # Clave: (docente_id, curso_id, periodo) -> Valor: veces
             aggregated_entries = {}
 
             for item in data:
-                # Buscar Docente en memoria
-                docente = self._find_docente_in_memory(docentes_cache, item['docente_nombre'])
-                if not docente: continue
+                docente = docentes_cache.get(item.get('docente_id'))
+                curso = cursos_cache.get(item.get('curso_codigo'))
                 
-                # Buscar Curso en memoria (pasamos código y nombre)
-                curso = self._find_curso_in_memory(cursos_cache, item.get('curso_codigo'), item['curso_nombre'])
-                if not curso: continue
+                if not docente or not curso: 
+                    continue
                 
                 # Clave única para agregación
                 key = (docente.id, curso.id, item['periodo'])
@@ -251,16 +241,8 @@ class ScheduleProcessor:
                 else:
                     aggregated_entries[key] = 1
 
-                # Actualizar CV text (esto sí se puede hacer incrementalmente o al final)
-                curso_str = f"Dictó la asignatura: {item['curso_nombre']} (Periodo: {item['periodo']})."
-                if not docente.cv_text: docente.cv_text = ""
-                if curso_str not in docente.cv_text:
-                    docente.cv_text += f"\n- {curso_str}"
-                    db.add(docente)
-
             # --- 3. GUARDADO EN BD ---
             for (doc_id, cur_id, per), veces_count in aggregated_entries.items():
-                # Verificar si ya existe en BD para sumar
                 existing = db.query(Historial).filter(
                     Historial.docente_id == doc_id,
                     Historial.curso_id == cur_id,
@@ -269,9 +251,6 @@ class ScheduleProcessor:
                 
                 if existing:
                     existing.veces += veces_count
-                    # Actualizar ultima_vez
-                    from datetime import datetime
-                    existing.ultima_vez = datetime.utcnow()
                     db.add(existing)
                 else:
                     new_entry = Historial(
@@ -285,183 +264,12 @@ class ScheduleProcessor:
                     count += 1
             
             db.commit()
-            logger.info(f"💾 Commit exitoso: {count} nuevos registros de historial insertados (con agregación).")
+            logger.info(f"💾 Commit exitoso: {count} nuevos registros de historial insertados (con agregación determinista).")
             return count
 
         except Exception as e:
             db.rollback()
             logger.error(f"❌ Error en transaccion de historial: {e}")
             return 0
-
-    def _find_curso_in_memory(self, cursos_cache: List[Tuple[Curso, str]], codigo_buscado: str, nombre_buscado: str) -> Optional[Curso]:
-        """Busca curso por código (prioridad) o nombre."""
-        
-        # 1. Búsqueda exacta por código (si existe)
-        if codigo_buscado:
-            # Normalizar código buscado: quitar espacios y guiones
-            codigo_clean = codigo_buscado.replace(" ", "").replace("-", "").upper() 
-            for curso_obj, _ in cursos_cache:
-                if curso_obj.codigo:
-                    # Normalizar código DB: quitar espacios y guiones
-                    db_code_clean = curso_obj.codigo.replace(" ", "").replace("-", "").upper()
-                    if db_code_clean == codigo_clean:
-                        return curso_obj
-        
-        # 2. Búsqueda difusa por nombre
-        nombre_clean = self._normalize_curso_name(nombre_buscado)
-        best_match = None
-        best_score = 0
-        
-        for curso_obj, curso_nombre_norm in cursos_cache:
-            score = self._calculate_similarity(nombre_clean, curso_nombre_norm)
-            if score > best_score:
-                best_score = score
-                best_match = curso_obj
-        
-        # DEBUG CURSO
-        if best_score > 0.4:
-             print(f"   ? Candidato Curso: '{best_match.nombre}' | Score: {best_score:.2f} | Buscado: '{nombre_clean}'")
-
-        if best_score > 0.80: # Cursos requieren más precisión
-            return best_match
-            
-        # 3. Fallback: Búsqueda Semántica (SBERT) para cursos que cambiaron de nombre
-        # Solo si el score anterior fue muy bajo (evitar costo computacional si ya tenemos un candidato decente)
-        if best_score < 0.5:
-            # print(f"   🧠 Intentando Match Semántico para: '{nombre_clean}'")
-            best_semantic_score = 0
-            best_semantic_match = None
-            
-            # Optimización: Solo comparar con cursos que tengan al menos 1 palabra en común o longitud similar
-            # (Para no comparar con todo el catálogo a fuerza bruta si es muy grande)
-            
-            model = self._get_sbert_model()
-            if model:
-                # Codificar el nombre buscado una sola vez
-                query_embedding = model.encode(nombre_clean, convert_to_tensor=True)
-                
-                for curso_obj, curso_nombre_norm in cursos_cache:
-                    # Calcular similitud coseno
-                    target_embedding = model.encode(curso_nombre_norm, convert_to_tensor=True)
-                    sem_score = float(util.cos_sim(query_embedding, target_embedding)[0][0])
-                    
-                    if sem_score > best_semantic_score:
-                        best_semantic_score = sem_score
-                        best_semantic_match = curso_obj
-                
-                if best_semantic_score > 0.82: # Umbral semántico AJUSTADO (era 0.65, subido a 0.82 para evitar falsos positivos)
-                    print(f"   🧠 Match Semántico: '{best_semantic_match.nombre}' | Score: {best_semantic_score:.2f} | Buscado: '{nombre_clean}'")
-                    return best_semantic_match
-
-        return None
-
-    def _find_docente_in_memory(self, docentes_cache: List[Tuple[Docente, str]], nombre_buscado: str) -> Optional[Docente]:
-        """Busca docente en la lista precargada."""
-        nombre_clean = self._normalize_docente_name(nombre_buscado)
-        best_match = None
-        best_score = 0
-        
-        # DEBUG: Imprimir qué estamos buscando
-        # print(f"🔍 Buscando docente: '{nombre_buscado}' (Norm: '{nombre_clean}')")
-
-        for docente_obj, docente_nombre_norm in docentes_cache:
-            score = self._calculate_name_similarity(nombre_clean, docente_nombre_norm)
-            
-            if score > best_score:
-                best_score = score
-                best_match = docente_obj
-
-        # DEBUG: Mostrar el mejor candidato encontrado y su score
-        if best_score > 0.4: # Solo mostrar si hay algo remotamente parecido
-            print(f"   ? Candidato: '{best_match.nombre}' | Score: {best_score:.2f} | Buscado: '{nombre_clean}'")
-
-        # FIX: Bajamos el umbral de 0.75 a 0.50 para permitir coincidencias parciales
-        # (ej: "Juan Perez" vs "Juan Carlos Perez" -> Score 0.66)
-        # La seguridad la da _calculate_name_similarity que exige al menos 2 palabras coincidentes.
-        if best_score >= 0.50:
-            return best_match
-        
-        return None
-    
-    def _remove_accents(self, input_str: str) -> str:
-        import unicodedata
-        nfkd_form = unicodedata.normalize('NFKD', input_str)
-        return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
-
-    def _normalize_curso_name(self, nombre: str) -> str:
-        if not nombre: return ""
-        nombre = nombre.upper().strip()
-        nombre = self._remove_accents(nombre) # FIX: Remove accents
-        
-        # Limpieza agresiva específica UPAO
-        nombre = re.sub(r'MODALIDAD.*', '', nombre)
-        nombre = re.sub(r'TOTAL.*', '', nombre)
-        
-        abreviaturas = {
-            'SIST': 'SISTEMAS', 'INFORM': 'INFORMACION', 'GESTION': 'GESTION', 'GEST': 'GESTION',
-            'ADMIN': 'ADMINISTRACION', 'ADM': 'ADMINISTRACION', 'DESARR': 'DESARROLLO', 'DESA': 'DESARROLLO',
-            'APLIC': 'APLICACIONES', 'PROG': 'PROGRAMACION', 'PROGRAM': 'PROGRAMACION', 'PROGRA': 'PROGRAMACION',
-            'ORGANIZ': 'ORGANIZACION', 'EMPRESAS': 'EMPRESARIAL', 'BASE': 'BASES', 'DATOS': 'DATOS',
-            'REDES': 'REDES', 'COMPUT': 'COMPUTACION', 'COMPUTAC': 'COMPUTACION', 'DISPOSIT': 'DISPOSITIVOS',
-            'MOVILES': 'MOVILES', 'INTELIG': 'INTELIGENTES', 'ESTRUCTURA': 'ESTRUCTURAS', 'ALGORITMOS': 'ALGORITMOS',
-            'ARQUI': 'ARQUITECTURA', 'INTR': 'INTRODUCCION', 'INTROD': 'INTRODUCCION', 'TECN': 'TECNOLOGIA',
-            'PROY': 'PROYECTOS', 'FOND': 'FUNDAMENTOS', 'FUND': 'FUNDAMENTOS', 'EVAL': 'EVALUACION',
-            'FORM': 'FORMULACION', 'METODOS': 'METODOS', 'CUANTITAT': 'CUANTITATIVOS', 'NEGOCIOS': 'NEGOCIOS',
-            'TALL': 'TALLER', 'INTEG': 'INTEGRACION', 'MEDIO': 'MEDIO', 'AMB': 'AMBIENTE',
-            'SOST': 'SOSTENIBLE', 'SEG': 'SEGURIDAD', 'INF': 'INFORMACION', 'VIDEO': 'VIDEO',
-            'JUEG': 'JUEGOS', 'WEB': 'WEB', 'SOPORTE': 'SOPORTE', 'DECISIONES': 'DECISIONES',
-            'DECISION': 'DECISIONES'
-        }
-        
-        # Regex \b para reemplazo seguro de palabras completas
-        for abrev, completo in abreviaturas.items():
-            nombre = re.sub(r'\b' + abrev + r'\b', completo, nombre)
-        
-        nombre = re.sub(r'[^\w\s]', ' ', nombre)
-        return ' '.join(nombre.split())
-    
-    def _normalize_docente_name(self, nombre: str) -> str:
-        if not nombre: return ""
-        nombre = nombre.upper().strip()
-        nombre = self._remove_accents(nombre) # FIX: Remove accents
-        nombre = nombre.replace(',', ' ')
-        nombre = re.sub(r'[^\w\s]', ' ', nombre)
-        return ' '.join(nombre.split())
-    
-    def _calculate_similarity(self, str1: str, str2: str) -> float:
-        words1 = set(str1.split())
-        words2 = set(str2.split())
-        if not words1 or not words2: return 0.0
-        intersection = words1.intersection(words2)
-        union = words1.union(words2)
-        return len(intersection) / len(union) if union else 0.0
-
-    def _calculate_name_similarity(self, name1: str, name2: str) -> float:
-        words1 = set(name1.split())
-        words2 = set(name2.split())
-        if not words1 or not words2: return 0.0
-        intersection = words1.intersection(words2)
-        if len(intersection) < 2: return 0.0
-        union = words1.union(words2)
-        jaccard = len(intersection) / len(union) if union else 0.0
-        # Bonus pequeño si hay al menos 2 coincidencias (Nombre + Apellido)
-        if len(intersection) >= 2: jaccard += 0.1
-        return min(jaccard, 1.0)
-
-    # --- SBERT MATCHING ---
-    def _get_sbert_model(self):
-        if not hasattr(self, 'sbert_model'):
-            try:
-                self.sbert_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
-            except:
-                self.sbert_model = None
-        return self.sbert_model
-
-    def _calculate_semantic_similarity(self, text1: str, text2: str) -> float:
-        model = self._get_sbert_model()
-        if not model: return 0.0
-        emb1 = model.encode(text1, convert_to_tensor=True)
-        emb2 = model.encode(text2, convert_to_tensor=True)
-        return float(util.cos_sim(emb1, emb2)[0][0])
 
 schedule_processor = ScheduleProcessor()

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from backend.database.models import Docente, Curso, Historial, Recomendacion, Procesamiento, RecomendacionCache
+from backend.database.models import Docente, Curso, Historial, Recomendacion, WebhookLog, RecomendacionCache
 from datetime import datetime, timedelta
 
 
@@ -105,29 +105,18 @@ def invalidate_recomendaciones_by_curso(db: Session, curso_id: int):
     db.commit()
 
 
-def create_procesamiento(db: Session, folder_id: str, folder_type: str, files_total: int) -> Procesamiento:
-    procesamiento = Procesamiento(folder_id=folder_id, folder_type=folder_type, status='processing', files_total=files_total)
-    db.add(procesamiento)
+def create_webhook_log(db: Session, drive_file_id: str, evento_tipo: str, entidad: str, status: str, error_message: str = None) -> WebhookLog:
+    log = WebhookLog(
+        drive_file_id=drive_file_id,
+        evento_tipo=evento_tipo,
+        entidad=entidad,
+        status=status,
+        error_message=error_message
+    )
+    db.add(log)
     db.commit()
-    db.refresh(procesamiento)
-    return procesamiento
-
-def update_procesamiento_progress(db: Session, procesamiento_id: int, files_processed: int):
-    procesamiento = db.query(Procesamiento).filter(Procesamiento.id == procesamiento_id).first()
-    if procesamiento:
-        procesamiento.files_processed = files_processed
-        if files_processed >= procesamiento.files_total:
-            procesamiento.status = 'completed'
-            procesamiento.completed_at = datetime.utcnow()
-        db.commit()
-
-def mark_procesamiento_error(db: Session, procesamiento_id: int, error_message: str):
-    procesamiento = db.query(Procesamiento).filter(Procesamiento.id == procesamiento_id).first()
-    if procesamiento:
-        procesamiento.status = 'error'
-        procesamiento.error_message = error_message
-        procesamiento.completed_at = datetime.utcnow()
-        db.commit()
+    db.refresh(log)
+    return log
 
 
 def get_recomendaciones_cache(db: Session, curso_id: int, max_age_days: Optional[int] = 7) -> Optional[List[RecomendacionCache]]:
@@ -135,7 +124,7 @@ def get_recomendaciones_cache(db: Session, curso_id: int, max_age_days: Optional
     if max_age_days is not None:
         fecha_limite = datetime.utcnow() - timedelta(days=max_age_days)
         query = query.filter(RecomendacionCache.fecha_generada >= fecha_limite)
-    cache = query.order_by(RecomendacionCache.ranking_position).all()
+    cache = query.order_by(RecomendacionCache.score_combinado.desc()).all()
     return cache if cache else None
 
 def save_recomendaciones_cache(db: Session, curso_id: int, recommendations: List[dict], version_algoritmo: str = "sbert_v1.0") -> None:
@@ -150,7 +139,6 @@ def save_recomendaciones_cache(db: Session, curso_id: int, recommendations: List
                 score_semantico=rec.get('score_semantico', 0.0),
                 evidencias=rec.get('evidencias', []),
                 shap_explanations=rec.get('shap_explanations', {}),
-                ranking_position=idx + 1,
                 version_algoritmo=version_algoritmo,
                 fecha_generada=datetime.utcnow()
             )
@@ -166,6 +154,16 @@ def clear_recomendaciones_cache(db: Session, curso_id: Optional[int] = None) -> 
         query = query.filter(RecomendacionCache.curso_id == curso_id)
     count = query.count()
     query.delete()
+    db.commit()
+    return count
+
+def delete_recomendaciones_cache_by_docente(db: Session, docente_id: int) -> int:
+    count = db.query(RecomendacionCache).filter(RecomendacionCache.docente_id == docente_id).delete()
+    db.commit()
+    return count
+
+def delete_recomendaciones_cache_by_curso(db: Session, curso_id: int) -> int:
+    count = db.query(RecomendacionCache).filter(RecomendacionCache.curso_id == curso_id).delete()
     db.commit()
     return count
 

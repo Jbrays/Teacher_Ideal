@@ -13,11 +13,7 @@ from sqlalchemy.orm import Session
 # Configuración de logger
 logger = logging.getLogger(__name__)
 
-# Intentamos importar NER
-try:
-    from .ner_service import extract_entities
-except ImportError:
-    def extract_entities(text): return {}
+# Se eliminó la importación de ner_service por la arquitectura de LLM Unificado
 
 class DOCXProcessor:
     def __init__(self):
@@ -70,13 +66,15 @@ class DOCXProcessor:
         Actúa como un analista académico. Tienes el texto crudo de un Sílabo universitario.
         Extrae la información clave en un JSON estricto.
 
-        Reglas:
-        1. 'nombre': Nombre de la asignatura.
-        2. 'codigo': Código del curso.
-        3. 'ciclo': Número de ciclo (entero).
-        4. 'descripcion': Texto de la SUMILLA.
-        5. 'temas_clave': Lista de strings con temas técnicos (ej: ["Patrones", "SQL"]).
-        6. 'texto_optimizado_sbert': Resumen para embeddings.
+        Formato requerido:
+        {{
+            "nombre": "string (Nombre de la asignatura)",
+            "codigo": "string",
+            "ciclo": 1 (entero),
+            "descripcion": "string (Texto de la SUMILLA)",
+            "entidades_clave": ["string", "string"],
+            "perfil_sintetico": "string (Resumen denso de los temas para búsqueda vectorial)"
+        }}
 
         Texto:
         {raw_text[:7000]}
@@ -122,11 +120,9 @@ class DOCXProcessor:
             if not nombre and filename:
                 nombre = filename.replace('.docx', '').replace('_', ' ')
 
-            # 3. Enriquecer con NER local
-            target_text = ai_data.get('texto_optimizado_sbert', full_text)
-            entities = extract_entities(target_text)
-
-            temas_gemini = ai_data.get('temas_clave', [])
+            # 3. Enriquecer con datos del JSON
+            target_text = ai_data.get('perfil_sintetico', full_text)
+            entities = ai_data.get('entidades_clave', [])
             
             return {
                 'success': True,
@@ -134,12 +130,8 @@ class DOCXProcessor:
                 'codigo': ai_data.get('codigo'),
                 'ciclo': ai_data.get('ciclo', 1),
                 'descripcion': ai_data.get('descripcion', ''),
-                'contenidos': list(set(temas_gemini + entities.get('contenidos', []))),
-                'areas': entities.get('areas', []),
-                'herramientas': entities.get('herramientas', []),
-                'lenguajes': entities.get('lenguajes', []),
-                'metodologias': entities.get('metodologias', []),
-                'full_text': target_text,
+                'entidades_clave': entities,
+                'perfil_sintetico': target_text,
                 'raw_text_length': len(full_text)
             }
         except Exception as e:
@@ -156,12 +148,8 @@ class DOCXProcessor:
                 "codigo": syllabus_info.get('codigo'),
                 "ciclo": int(syllabus_info.get('ciclo', 1)),
                 "descripcion": syllabus_info.get('descripcion'),
-                "areas": syllabus_info.get('areas', []),
-                "herramientas": syllabus_info.get('herramientas', []),
-                "lenguajes": syllabus_info.get('lenguajes', []),
-                "metodologias": syllabus_info.get('metodologias', []),
-                "contenidos": syllabus_info.get('contenidos', []),
-                "syllabus_text": syllabus_info.get('full_text', '')
+                "entidades_clave": syllabus_info.get('entidades_clave', []),
+                "perfil_sintetico": syllabus_info.get('perfil_sintetico', '')
             }
 
             if existing:

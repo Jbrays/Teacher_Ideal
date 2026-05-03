@@ -30,7 +30,6 @@ from backend.services.docx_processor import docx_processor
 from backend.services.schedule_processor import schedule_processor 
 from backend.services.recommendation_engine import recommendation_engine
 from backend.services.embeddings_manager import embeddings_manager
-from backend.services.ner_service import extract_entities
 from backend.models.schemas import UserLogin, UserResponse, AuthResponse, SystemStatus
 from backend.database.db_session import get_db, init_db
 from backend.database import crud
@@ -179,371 +178,65 @@ async def list_folder_files(folder_id: str, authorization: Optional[str] = Heade
         print(f"Error listando archivos: {e}")
         raise HTTPException(status_code=500, detail=f"Error listando archivos: {str(e)}")
 
-# --- 6. PROCESAMIENTO DE ARCHIVOS ---
+# --- 6. WEBHOOKS DE DRIVE (PROCESAMIENTO AUTÓNOMO) ---
+from fastapi import Request, BackgroundTasks
 
-# A. PROCESAR CVs
-@app.post("/api/drive/process-cvs/{folder_id}")
-async def process_cvs(
-    folder_id: str, 
-    google_token: Optional[str] = Header(None, alias="X-Drive-Token"),
-    user: dict = Depends(get_current_user), 
-    db: Session = Depends(get_db)
-):
-    if not google_token:
-        raise HTTPException(status_code=401, detail="Token de Google requerido")
+@app.post("/api/webhooks/drive")
+async def drive_webhook(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Endpoint público para recibir notificaciones push de Google Drive.
+    Gestiona creaciones, modificaciones y eliminaciones de forma asíncrona.
+    """
+    # Google Drive envía información vital en los headers
+    channel_id = request.headers.get("X-Goog-Channel-ID")
+    resource_id = request.headers.get("X-Goog-Resource-ID")
+    resource_state = request.headers.get("X-Goog-Resource-State") # sync, add, update, trash, delete
+    
+    # Podríamos necesitar parsear el body si configuramos un webhook con payload
+    # body = await request.json() si viene como json
+    
+    # Por ahora, simulamos que recibimos el drive_file_id y la entidad del body
+    # (En la implementación real de Drive API, se tendría que consultar la API para ver qué cambió)
     try:
-        if not drive_service.build_service(google_token):
-            raise HTTPException(status_code=500, detail="Error conectando con Drive")
+        body = await request.json()
+    except:
+        body = {}
+
+    drive_file_id = body.get("drive_file_id", "test_id")
+    evento_tipo = body.get("evento_tipo", resource_state or "update")
+    entidad = body.get("entidad", "docente") # docente, curso, horario
+    
+    # 1. Registrar el evento en logs
+    crud.create_webhook_log(db, drive_file_id, evento_tipo, entidad, "received")
+
+    if evento_tipo in ["trash", "delete"]:
+        # Caché Quirúrgica: Eliminación instantánea (y en cascada)
+        if entidad == "docente":
+            docente = crud.get_docente_by_drive_id(db, drive_file_id)
+            if docente:
+                crud.delete_docente(db, docente.id) # Esto borra historial y caché en cascada
+        elif entidad == "curso":
+            curso = crud.get_curso_by_drive_id(db, drive_file_id)
+            if curso:
+                # Aquí podrías tener delete_curso
+                db.delete(curso)
+                db.commit()
+        return {"status": "deleted", "drive_file_id": drive_file_id}
         
-        all_files = drive_service.list_files_in_folder(folder_id, None, recursive=True)
-        if not all_files:
-            return {"success": True, "processed": 0, "message": "La carpeta está vacía."}
+    elif evento_tipo in ["add", "update", "sync"]:
+        # Aquí se delegaría la tarea a Celery o BackgroundTasks para no bloquear el Webhook
+        def background_process():
+            # Simulación de la lógica de descarga y procesamiento individual
+            print(f"Procesando en segundo plano archivo: {drive_file_id} ({entidad})")
+            # pdf_processor.process...
+            # Borrado quirúrgico de caché:
+            # crud.delete_recomendaciones_cache_by_docente(db, docente.id)
+            pass
             
-        file_types = ['application/pdf']
-        files = [f for f in all_files if f.get('mimeType') in file_types]
+        background_tasks.add_task(background_process)
+        return {"status": "processing_started", "drive_file_id": drive_file_id}
         
-        if not files:
-            mimes = set([f.get('mimeType') for f in all_files])
-            raise HTTPException(status_code=400, detail=f"No hay PDFs en la carpeta. Tipos encontrados: {mimes}")
-            
-        print(f"Procesando {len(files)} CVs...")
-
-        procesamiento = crud.create_procesamiento(db, folder_id=folder_id, folder_type='cvs', files_total=len(files))
-        processed_cvs = []
-        errors = []
-
-        db_lock = asyncio.Lock()
-        semaphore = asyncio.Semaphore(2)
-
-        async def process_single_cv(idx, file):
-            async with semaphore:
-                try:
-                    print(f"  ...Iniciando CV ({idx+1}/{len(files)}): {file['name']}")
-                    
-                    # RETRY LOGIC PARA DESCARGA (3 intentos) + THREAD SAFE
-                    max_retries = 3
-                    file_content = None
-                    last_error = None
-                    
-                    for attempt in range(max_retries):
-                        try:
-                            loop = asyncio.get_event_loop()
-                            if attempt > 0: await asyncio.sleep(1 * attempt)
-                            # USAR MÉTODO THREAD-SAFE
-                            file_content = await loop.run_in_executor(None, drive_service.download_file_thread_safe, file['id'], google_token)
-                            if file_content: break
-                        except Exception as e:
-                            last_error = e
-                            print(f"Retry {attempt+1}/{max_retries} descarga {file['name']}: {e}")
-                    
-                    if not file_content:
-                        return {'error': f'Fallo descarga tras {max_retries} intentos: {last_error}', 'file': file}
-
-                    # Procesamiento CPU-bound
-                    cv_info = await loop.run_in_executor(None, pdf_processor.extract_cv_info, file_content, file['name'])
-                    
-                    if cv_info['success']:
-                        async with db_lock:
-                            docente_id = pdf_processor.save_docente_to_db(db, cv_info, file['id'])
-                            if docente_id:
-                                crud.update_procesamiento_progress(db, procesamiento.id, idx + 1)
-                        if docente_id:
-                            return {'success': True, 'docente_id': docente_id}
-                        else:
-                            return {'error': 'Error al guardar en BD', 'file': file}
-                    else:
-                        return {'error': cv_info.get('error'), 'file': file}
-                        
-                except Exception as e:
-                    try:
-                        db.rollback()
-                    except:
-                        pass
-                    return {'error': str(e), 'file': file}
-
-        # Lanzar tareas
-        tasks = [process_single_cv(i, f) for i, f in enumerate(files)]
-        results = await asyncio.gather(*tasks)
-
-        # Procesar resultados
-        for res in results:
-            if res.get('success'):
-                d = crud.get_docente_by_id(db, res['docente_id'])
-                if d: processed_cvs.append(d)
-            else:
-                errors.append({'filename': res['file']['name'], 'error': res['error']})
-        
-        if errors:
-            crud.mark_procesamiento_error(db, procesamiento.id, f"{len(errors)} errores")
-        
-        crud.clear_recomendaciones_cache(db) # Invalidar cache
-        
-        return {
-            "success": True,
-            "processed": len(processed_cvs),
-            "errors": len(errors),
-            "docentes": [d.to_dict() if hasattr(d, 'to_dict') else d.__dict__ for d in processed_cvs],
-            "error_details": errors
-        }
-    except Exception as e:
-        print(f"❌ Error procesando CVs: {e}")
-        raise HTTPException(status_code=500, detail=f"Error procesando CVs: {str(e)}")
-
-# B. PROCESAR SÍLABOS
-@app.post("/api/drive/process-syllabi/{folder_id}")
-async def process_syllabi(
-    folder_id: str, 
-    google_token: Optional[str] = Header(None, alias="X-Drive-Token"),
-    user: dict = Depends(get_current_user), 
-    db: Session = Depends(get_db)
-):
-    if not google_token:
-        raise HTTPException(status_code=401, detail="Token de Google requerido")
-    try:
-        if not drive_service.build_service(google_token):
-            raise HTTPException(status_code=500, detail="Error conectando con Drive")
-        
-        all_files = drive_service.list_files_in_folder(folder_id, None, recursive=True)
-        if not all_files:
-            return {"success": True, "processed": 0, "message": "La carpeta está vacía."}
-            
-        file_types = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-        files = [f for f in all_files if f.get('mimeType') in file_types]
-        
-        if not files:
-            mimes = set([f.get('mimeType') for f in all_files])
-            raise HTTPException(status_code=400, detail=f"No hay Word Docx en la carpeta. Tipos encontrados: {mimes}")
-            
-        print(f"📚 Procesando {len(files)} sílabos...")
-
-        procesamiento = crud.create_procesamiento(db, folder_id=folder_id, folder_type='syllabi', files_total=len(files))
-        processed_cursos = []
-        errors = []
-
-        db_lock = asyncio.Lock()
-        semaphore = asyncio.Semaphore(2)
-
-        async def process_single_syllabus(idx, file):
-            async with semaphore:
-                try:
-                    loop = asyncio.get_event_loop()
-                    print(f"  ...Iniciando Sílabo ({idx+1}/{len(files)}): {file['name']}")
-                    
-                    # OPTIMIZACIÓN: Verificar si ya existe en BD para saltar descarga y AI
-                    # Esto permite reanudar procesos interrumpidos sin gastar quota
-                    async with db_lock:
-                        existing_curso = await loop.run_in_executor(None, crud.get_curso_by_drive_id, db, file['id'])
-                    if existing_curso:
-                        print(f"    ⏩ Saltando {file['name']} (Ya procesado)")
-                        return {'success': True, 'curso_id': existing_curso.id}
-                    
-                    max_retries = 3
-                    file_content = None
-                    last_error = None
-                    
-                    for attempt in range(max_retries):
-                        try:
-                            loop = asyncio.get_event_loop()
-                            if attempt > 0: await asyncio.sleep(1 * attempt)
-                            # DEBUG: Verificar si entra aquí
-                            print(f"    ⬇️ Intentando descargar {file['name']} (Intento {attempt+1})")
-                            # USAR MÉTODO THREAD-SAFE
-                            file_content = await loop.run_in_executor(None, drive_service.download_file_thread_safe, file['id'], google_token)
-                            if file_content: break
-                        except Exception as e:
-                            last_error = e
-                            print(f"    ⚠️ Retry {attempt+1}/{max_retries} descarga {file['name']}: {e}")
-
-                    if not file_content:
-                        return {'error': f'Fallo descarga tras {max_retries} intentos: {last_error}', 'file': file}
-
-                    syllabus_info = await loop.run_in_executor(None, docx_processor.extract_syllabus_info, file_content, file['name'])
-                    
-                    if syllabus_info['success']:
-                        async with db_lock:
-                            curso_id = docx_processor.save_curso_to_db(db, syllabus_info, file['id'])
-                            if curso_id:
-                                crud.update_procesamiento_progress(db, procesamiento.id, idx + 1)
-                        if curso_id:
-                            return {'success': True, 'curso_id': curso_id}
-                        else:
-                            return {'error': 'Error al guardar en BD', 'file': file}
-                    else:
-                        return {'error': syllabus_info.get('error'), 'file': file}
-                        
-                except Exception as e:
-                    print(f"    ❌ Error en {file['name']}: {e}")
-                    try:
-                        db.rollback()
-                    except:
-                        pass
-                    return {'error': str(e), 'file': file}
-
-        tasks = [process_single_syllabus(i, f) for i, f in enumerate(files)]
-        results = await asyncio.gather(*tasks)
-
-        for res in results:
-            if res.get('success'):
-                c = crud.get_curso_by_id(db, res['curso_id'])
-                if c: processed_cursos.append(c)
-            else:
-                errors.append({'filename': res['file']['name'], 'error': res['error']})
-
-        if errors:
-            crud.mark_procesamiento_error(db, procesamiento.id, f"{len(errors)} errores")
-
-        crud.clear_recomendaciones_cache(db)
-
-        ciclos_cursos = {}
-        for curso in processed_cursos:
-            ciclo_str = str(curso.ciclo or 1)
-            if ciclo_str not in ciclos_cursos:
-                ciclos_cursos[ciclo_str] = []
-            
-            # Crear objeto simple para evitar errores de serialización
-            curso_obj = {
-                "id": curso.id,
-                "nombre": curso.nombre,
-                "codigo": curso.codigo,
-                "ciclo": curso.ciclo
-            }
-            ciclos_cursos[ciclo_str].append(curso_obj)
-        
-        return {
-            "success": True,
-            "processed": len(processed_cursos),
-            "errors": len(errors),
-            "ciclos": sorted(ciclos_cursos.keys(), key=lambda x: int(x) if x.isdigit() else 99),
-            "cursos_por_ciclo": ciclos_cursos,
-            "error_details": errors
-        }
-    except Exception as e:
-        print(f"❌ Error procesando sílabos: {e}")
-        raise HTTPException(status_code=500, detail=f"Error procesando sílabos: {str(e)}")
-
-# C. PROCESAR HORARIOS (¡LA PARTE NUEVA!)
-@app.post("/api/drive/process-schedules/{folder_id}")
-async def process_schedules(
-    folder_id: str, 
-    google_token: Optional[str] = Header(None, alias="X-Drive-Token"),
-    user: dict = Depends(get_current_user), 
-    db: Session = Depends(get_db)
-):
-    if not google_token:
-        raise HTTPException(status_code=401, detail="Token de Google requerido")
-
-    try:
-        if not drive_service.build_service(google_token):
-            raise HTTPException(status_code=500, detail="Error conectando con Drive")
-        
-        # Buscar PDFs de horarios
-        all_files = drive_service.list_files_in_folder(folder_id, None, recursive=True)
-        if not all_files:
-            return {"success": True, "processed": 0, "message": "La carpeta está vacía."}
-            
-        file_types = ['application/pdf']
-        files = [f for f in all_files if f.get('mimeType') in file_types]
-        
-        if not files:
-            mimes = set([f.get('mimeType') for f in all_files])
-            raise HTTPException(status_code=400, detail=f"No hay PDFs en la carpeta. Tipos encontrados: {mimes}")
-            
-        print(f"📅 Procesando {len(files)} horarios...")
-
-        procesamiento = crud.create_procesamiento(db, folder_id=folder_id, folder_type='schedules', files_total=len(files))
-        
-        total_records = 0
-        errors = []
-
-        db_lock = asyncio.Lock()
-        semaphore = asyncio.Semaphore(2)
-
-        async def process_single_schedule(idx, file):
-            async with semaphore:
-                try:
-                    print(f"  ...Iniciando Horario ({idx+1}/{len(files)}): {file['name']}")
-                    
-                    max_retries = 3
-                    file_content = None
-                    last_error = None
-                    
-                    for attempt in range(max_retries):
-                        try:
-                            loop = asyncio.get_event_loop()
-                            if attempt > 0: await asyncio.sleep(1 * attempt)
-                            # USAR MÉTODO THREAD-SAFE
-                            file_content = await loop.run_in_executor(None, drive_service.download_file_thread_safe, file['id'], google_token)
-                            if file_content: break
-                        except Exception as e:
-                            last_error = e
-                            print(f"    ⚠️ Retry {attempt+1}/{max_retries} descarga {file['name']}: {e}")
-
-                    if not file_content: return {'records': 0}
-
-                    # Guardar contenido en archivo temporal
-                    import tempfile
-                    import os
-                    
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                        tmp_file.write(file_content)
-                        tmp_path = tmp_file.name
-                    
-                    real_name_path = None
-                    try:
-                        temp_dir = os.path.dirname(tmp_path)
-                        real_name_path = os.path.join(temp_dir, file['name'].replace("/", "_"))
-                        
-                        if os.path.exists(real_name_path): os.remove(real_name_path)
-                        os.rename(tmp_path, real_name_path)
-                        
-                        # Ejecutar extracción en executor (CPU bound + I/O)
-                        extracted_data = await loop.run_in_executor(None, schedule_processor.extract_schedule_data, real_name_path)
-                        
-                        # Guardar en BD (Síncrono)
-                        async with db_lock:
-                            records_saved = schedule_processor.save_history_to_db(db, extracted_data)
-                            crud.update_procesamiento_progress(db, procesamiento.id, idx + 1)
-                        
-                        return {'records': records_saved}
-                        
-                    finally:
-                        if real_name_path and os.path.exists(real_name_path): os.remove(real_name_path)
-                        if os.path.exists(tmp_path): os.remove(tmp_path)
-                        
-                except Exception as e:
-                    print(f"  ❌ Error en horario {file['name']}: {e}")
-                    try:
-                        db.rollback()
-                    except:
-                        pass
-                    return {'error': str(e), 'file': file}
-
-        tasks = [process_single_schedule(i, f) for i, f in enumerate(files)]
-        results = await asyncio.gather(*tasks)
-
-        for res in results:
-            if 'records' in res:
-                total_records += res['records']
-            elif 'error' in res:
-                errors.append({'filename': res['file']['name'], 'error': res['error']})
-
-        if errors:
-            crud.mark_procesamiento_error(db, procesamiento.id, f"{len(errors)} errores")
-        
-        # Limpiar cache porque el historial afecta al ranking
-        crud.clear_recomendaciones_cache(db)
-
-        return {
-            "success": True,
-            "processed_files": len(files),
-            "total_history_records": total_records,
-            "errors": len(errors),
-            "error_details": errors
-        }
-        
-    except Exception as e:
-        print(f"❌ Error procesando horarios: {e}")
-        raise HTTPException(status_code=500, detail=f"Error procesando horarios: {str(e)}")
+    return {"status": "ignored"}
 
 # --- 7. CONSULTAS A LA BD (PROTEGIDAS) ---
 @app.get("/api/docentes")
@@ -617,45 +310,9 @@ async def recommend_docentes(curso_id: int, top_k: int = 100, user: dict = Depen
         print(f"❌ Error generando recomendaciones de docentes: {e}")
         raise HTTPException(status_code=500, detail=f"Error generando recomendaciones: {str(e)}")
 
-# --- 9. ENDPOINTS DE DEBUG (PARA VERIFICAR NER) ---
-@app.get("/api/debug/ner-profile/docente/{docente_id}")
-async def debug_docente_ner_profile(docente_id: int, db: Session = Depends(get_db)):
-    docente = crud.get_docente_by_id(db, docente_id)
-    if not docente:
-        raise HTTPException(status_code=404, detail="Docente no encontrado")
-    
-    # Volver a ejecutar NER en el texto actual para ver qué detecta el diccionario actual
-    full_text = docente.cv_text
-    entities = extract_entities(full_text)
-    profile_text = recommendation_engine.create_docente_text(docente)
-    
-    return {
-        "success": True,
-        "docente_id": docente_id,
-        "docente_nombre": docente.nombre,
-        "perfil_ner_extraido_con_diccionario_actual": entities,
-        "texto_que_usa_sbert": profile_text,
-        "texto_completo_original (preview)": full_text[:1000] if full_text else "N/A"
-    }
-
-@app.get("/api/debug/ner-profile/curso/{curso_id}")
-async def debug_curso_ner_profile(curso_id: int, db: Session = Depends(get_db)):
-    curso = crud.get_curso_by_id(db, curso_id)
-    if not curso:
-        raise HTTPException(status_code=404, detail="Curso no encontrado")
-    
-    full_text = curso.syllabus_text
-    entities = extract_entities(full_text)
-    profile_text = recommendation_engine.create_curso_text(curso)
-    
-    return {
-        "success": True,
-        "curso_id": curso_id,
-        "curso_nombre": curso.nombre,
-        "perfil_ner_extraido_con_diccionario_actual": entities,
-        "texto_que_usa_sbert": profile_text,
-        "texto_completo_original (preview)": full_text[:1000] if full_text else "N/A"
-    }
+# --- 9. ENDPOINTS DE DEBUG ELIMINADOS ---
+# Los endpoints /api/debug/ner-profile fueron removidos debido a la adopción del LLM Unificado (Gemini)
+# que reemplaza la extracción basada en diccionarios NER.
 
 # --- EJECUCIÓN LOCAL O CLOUD RUN ---
 if __name__ == "__main__":
