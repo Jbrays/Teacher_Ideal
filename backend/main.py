@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 from sqlalchemy.orm import Session
@@ -68,9 +69,21 @@ app.add_middleware(
 )
 
 # --- 4. RUTAS BÁSICAS Y AUTENTICACIÓN ---
-@app.get("/")
-async def read_root():
-    return {"message": "Sistema de Asignación Docente - API REST", "version": "1.0.0", "status": "active"}
+@app.get("/", include_in_schema=False)
+def read_root():
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+        <head>
+            <meta name="google-site-verification" content="zUnBO9B8AnQROxDHRiu2ZNhwwi-KsPWz_mwY3IOcs7s" />
+            <title>Backend API</title>
+        </head>
+        <body>
+            <h1>API Backend Activo</h1>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 @app.get("/health")
 async def health_check():
