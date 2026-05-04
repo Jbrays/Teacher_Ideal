@@ -230,14 +230,21 @@ async def config_webhook(folder_id: str, background_tasks: BackgroundTasks, goog
         
         response = drive_service.register_webhook(folder_id, webhook_url, channel_id)
         if response:
-            # Procesamiento Híbrido: Obtener archivos preexistentes
-            archivos = drive_service.list_files_in_folder(folder_id)
+            # Procesamiento Híbrido: Obtener archivos preexistentes usando la API nativa
+            archivos_data = drive_service.service.files().list(
+                q=f"'{folder_id}' in parents and trashed=false",
+                fields="files(id, name)",
+                pageSize=100
+            ).execute()
+            
+            archivos = archivos_data.get('files', [])
+            
             for archivo in archivos:
                 background_tasks.add_task(
                     process_drive_file_async, 
                     drive_file_id=archivo['id'], 
                     file_name=archivo.get('name', 'desconocido'), 
-                    entidad="desconocida" # Se infiere en el procesador por el mime/folder
+                    entidad="desconocida" # Se infiere en el procesador
                 )
             
             return {"success": True, "message": f"Webhook activo. Procesando {len(archivos)} archivos preexistentes.", "channel_id": channel_id}
