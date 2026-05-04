@@ -205,12 +205,67 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str):
     """
     db = SessionLocal()
     try:
-        print(f"🔄 Procesando en segundo plano archivo: {drive_file_id} ({file_name}) - Entidad: {entidad}")
+        # 1. Inferencia de Entidad
+        name_lower = file_name.lower()
+        if entidad == "desconocida":
+            if name_lower.endswith(".docx"):
+                entidad = "curso"
+            elif name_lower.endswith(".pdf") and "horario" in name_lower:
+                entidad = "horario"
+            elif name_lower.endswith(".pdf"):
+                entidad = "docente"
+            else:
+                print(f"⚠️ Formato no soportado o entidad no inferible para {file_name}")
+                return
+
+        print(f"🔄 Descargando y procesando {entidad}: {file_name}")
         
-        # Aquí va la invocación real a pdf_processor, docx_processor o schedule_processor
-        # utilizando la sesión `db` local recién instanciada.
-        
+        # 2. Descarga
+        file_bytes = drive_service.download_file(drive_file_id)
+        if not file_bytes:
+            raise Exception("No se pudo descargar el archivo.")
+
+        # 3. Enrutamiento, Procesamiento IA y Persistencia
+        if entidad == "docente":
+            from backend.services.pdf_processor import PDFProcessor
+            processor = PDFProcessor()
+            data = processor.extract_cv_info(file_bytes, file_name)
+            if data.get("success", False) or "name" in data:  # Dependiendo del output de extract_cv_info
+                processor.save_docente_to_db(db, data, drive_file_id)
+            else:
+                raise Exception(data.get("error", "Error desconocido en CV"))
+
+        elif entidad == "curso":
+            from backend.services.docx_processor import DocxProcessor
+            processor = DocxProcessor()
+            data = processor.extract_syllabus_info(file_bytes, file_name)
+            if data.get("success", False) or "nombre" in data:
+                processor.save_curso_to_db(db, data, drive_file_id)
+            else:
+                raise Exception(data.get("error", "Error desconocido en Sílabo"))
+
+        elif entidad == "horario":
+            from backend.services.schedule_processor import ScheduleProcessor
+            temp_path = f"/tmp/{drive_file_id}.pdf"
+            with open(temp_path, "wb") as f:
+                f.write(file_bytes)
+            try:
+                processor = ScheduleProcessor()
+                data_list = processor.extract_schedule_data(temp_path)
+                if data_list:
+                    processor.save_history_to_db(db, data_list)
+                else:
+                    raise Exception("No se extrajeron datos válidos del horario.")
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+
+        # 4. Confirmación Transaccional
+        db.commit()
+        print(f"✅ Procesamiento y guardado exitoso: {file_name}")
+
     except Exception as e:
+        db.rollback()
         print(f"❌ Error procesando {file_name}: {e}")
     finally:
         db.close()
