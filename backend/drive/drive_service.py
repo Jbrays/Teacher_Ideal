@@ -249,6 +249,35 @@ class DriveService:
             print(f"❌ Error descarga thread-safe: {e}")
             return None
 
+    def register_webhook(self, folder_id: str, webhook_url: str, channel_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Registrar un webhook de notificaciones push para una carpeta en Drive.
+        """
+        try:
+            if not self.service:
+                return None
+            
+            body = {
+                "id": channel_id,
+                "type": "web_hook",
+                "address": webhook_url
+            }
+            
+            response = self.service.files().watch(
+                fileId=folder_id,
+                body=body
+            ).execute()
+            
+            print(f"✅ Webhook registrado para carpeta {folder_id}: {response}")
+            return response
+            
+        except HttpError as e:
+            print(f"❌ Error registrando webhook: {e}")
+            return None
+        except Exception as e:
+            print(f"❌ Error inesperado registrando webhook: {e}")
+            return None
+
 
 # Instancia global del servicio
 drive_service = DriveService()

@@ -36,7 +36,11 @@ from backend.database import crud
 from backend.database.models import Docente, Curso
 
 # Inicializar la base de datos
+from backend.database.db_session import engine, Base
+import backend.database.models  # Importar explícitamente para asegurar que los modelos están registrados
+
 init_db()
+Base.metadata.create_all(bind=engine)
 
 # --- 3. CONFIGURACIÓN DE LA APP ---
 app = FastAPI(
@@ -177,6 +181,31 @@ async def list_folder_files(folder_id: str, authorization: Optional[str] = Heade
     except Exception as e:
         print(f"Error listando archivos: {e}")
         raise HTTPException(status_code=500, detail=f"Error listando archivos: {str(e)}")
+
+import uuid
+
+@app.post("/api/webhooks/config/{folder_id}")
+async def config_webhook(folder_id: str, google_token: Optional[str] = Header(None, alias="X-Drive-Token"), user: dict = Depends(get_current_user)):
+    if not google_token:
+        raise HTTPException(status_code=401, detail="Token de Google requerido")
+    try:
+        if not drive_service.build_service(google_token):
+            raise HTTPException(status_code=500, detail="Error conectando con Drive")
+        
+        channel_id = str(uuid.uuid4())
+        
+        # URL base de producción, podría ser una variable de entorno en el futuro
+        base_url = os.environ.get("WEBHOOK_BASE_URL", "https://teacher-ideal-121734839794.us-central1.run.app")
+        webhook_url = f"{base_url}/api/webhooks/drive"
+        
+        response = drive_service.register_webhook(folder_id, webhook_url, channel_id)
+        if response:
+            return {"success": True, "message": "Webhook registrado exitosamente", "channel_id": channel_id}
+        else:
+            raise HTTPException(status_code=500, detail="No se pudo registrar el webhook en Google Drive. Verifica permisos.")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error configurando webhook: {str(e)}")
 
 # --- 6. WEBHOOKS DE DRIVE (PROCESAMIENTO AUTÓNOMO) ---
 from fastapi import Request, BackgroundTasks

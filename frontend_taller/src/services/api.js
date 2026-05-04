@@ -80,67 +80,24 @@ export async function fetchRecommendations(cursoId, topK = 100) {
 }
 
 /**
- * Procesar CVs desde una carpeta de Drive
+ * Configurar Webhook para una carpeta de Drive
  */
-export async function processCVs(folderId, googleToken) {
+export async function configWebhook(folderId, googleToken) {
   try {
-    const response = await fetch(apiURL(`/api/drive/process-cvs/${folderId}`), {
+    const response = await fetch(apiURL(`/api/webhooks/config/${folderId}`), {
       method: 'POST',
       headers: getAuthHeaders(googleToken)
     });
 
     if (!response.ok) {
-      throw new Error(`Error ${response.status}: ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Error ${response.status}: ${errorData.detail || response.statusText}`);
     }
 
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Error processing CVs:', error);
-    throw error;
-  }
-}
-
-/**
- * Procesar sílabos desde una carpeta de Drive
- */
-export async function processSyllabi(folderId, googleToken) {
-  try {
-    const response = await fetch(apiURL(`/api/drive/process-syllabi/${folderId}`), {
-      method: 'POST',
-      headers: getAuthHeaders(googleToken)
-    });
-
-    if (!response.ok) {
-      throw new Error(`Error ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Error processing syllabi:', error);
-    throw error;
-  }
-}
-
-/**
- * Procesar horarios desde una carpeta de Drive
- */
-export async function processSchedules(folderId, googleToken) {
-  try {
-    const response = await fetch(apiURL(`/api/drive/process-schedules/${folderId}`), {
-      method: 'POST',
-      headers: getAuthHeaders(googleToken)
-    });
-
-    if (!response.ok) {
-      throw new Error(`Error ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Error processing schedules:', error);
+    console.error('Error configurando webhook:', error);
     throw error;
   }
 }

@@ -53,16 +53,23 @@
             Seleccionar carpeta
           </button>
 
-          <div class="flex flex-col gap-2 mt-3">
+          <p v-if="folderState[folder.key]?.id" class="text-sm font-medium text-green-700 mt-2 mb-1">
+            Carpeta vinculada: "{{ folderState[folder.key].name }}"
+          </p>
+
+          <div class="flex flex-col gap-2 mt-2">
             <button
-              v-if="folderState[folder.key]?.id"
+              v-if="folderState[folder.key]?.id && !webhookActive[folder.key]"
               @click="processIndividual(folder.key)"
               :disabled="processingState[folder.key]"
               class="w-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 py-2 rounded-xl font-medium shadow-sm transition flex items-center justify-center gap-2"
             >
               <span v-if="processingState[folder.key]" class="animate-spin">⏳</span>
-              {{ processingState[folder.key] ? 'Procesando...' : `Procesar solo ${folder.label}` }}
+              {{ processingState[folder.key] ? 'Vinculando...' : 'Sincronizar y Vincular' }}
             </button>
+            <div v-else-if="webhookActive[folder.key]" class="w-full flex items-center justify-center py-2 bg-green-50 text-green-700 rounded-xl font-medium border border-green-200">
+              ✅ Webhook Activo
+            </div>
           </div>
         </div>
 
@@ -73,7 +80,7 @@
           @click="processData"
           class="w-full bg-gray-800 hover:bg-gray-900 text-white py-3 rounded-xl font-semibold shadow transition"
         >
-          {{ isAnyProcessing ? 'Procesando...' : 'Procesar TODO (Completo)' }}
+          {{ isAnyProcessing ? 'Sincronizando...' : 'Guardar Configuración y Sincronizar Todo' }}
         </button>
 
         <p v-if="processStatus" class="text-gray-500 text-sm mt-3 whitespace-pre-line">
@@ -92,7 +99,7 @@
 <script>
 import { signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
-import { selectFolder, processAllData, processCVs, processSyllabi, processSchedules } from "../services/drive";
+import { selectFolder, processAllData, configWebhook } from "../services/drive";
 import { useAppStore } from "../store/app";
 import { useRouter } from "vue-router";
 import { ref, computed, onMounted } from "vue";
@@ -107,6 +114,13 @@ export default {
     
     // Estado de procesamiento individual
     const processingState = ref({
+      cvs: false,
+      syllabi: false,
+      schedules: false
+    });
+    
+    // Estado para verificar si el webhook está activo
+    const webhookActive = ref({
       cvs: false,
       syllabi: false,
       schedules: false
@@ -202,31 +216,15 @@ export default {
       try {
         processingState.value[type] = true;
         errorMessage.value = "";
-        processStatus.value = `Procesando ${type}...`;
+        processStatus.value = `Vinculando ${type}...`;
         
         const token = getGoogleToken();
-        let result;
-
-        if (type === 'cvs') {
-          result = await processCVs(folderState.value.cvs.id, token);
-          processStatus.value = `✅ CVs procesados: ${result.processed || 0}`;
-          if (result.message) processStatus.value += `\nℹ️ ${result.message}`;
-          if (result.errors) processStatus.value += `\n⚠️ Errores: ${result.errors}`;
-        } else if (type === 'syllabi') {
-          result = await processSyllabi(folderState.value.syllabi.id, token);
-          processStatus.value = `✅ Sílabos procesados: ${result.processed || 0}`;
-          if (result.message) processStatus.value += `\nℹ️ ${result.message}`;
-          if (result.errors) processStatus.value += `\n⚠️ Errores: ${result.errors}`;
-        } else if (type === 'schedules') {
-          result = await processSchedules(folderState.value.schedules.id, token);
-          processStatus.value = `✅ Horarios procesados: ${result.processed || result.total_history_records || 0} registros`;
-          if (result.message) processStatus.value += `\nℹ️ ${result.message}`;
-          if (result.errors) processStatus.value += `\n⚠️ Errores: ${result.errors}`;
-        }
-
-        // Refrescar datos en el store si es necesario (aunque idealmente el backend ya actualizó la BD)
-        // Podríamos hacer un fetch global ligero aquí si quisiéramos actualizar contadores
+        const result = await configWebhook(folderState.value[type].id, token);
         
+        if (result.success) {
+          webhookActive.value[type] = true;
+          processStatus.value = `✅ ${type}: ${result.message}`;
+        }
       } catch (error) {
         console.error(`Error procesando ${type}:`, error);
         errorMessage.value = error.message;
@@ -249,18 +247,15 @@ export default {
         processingState.value.schedules = true;
         
         errorMessage.value = "";
-        processStatus.value = "Procesando TODO...";
+        processStatus.value = "Sincronizando TODO...";
 
         const result = await processAllData(folderState.value);
 
         if (result.success) {
-          processStatus.value = "✅ Procesamiento completado exitosamente";
-          
-          store.setData({
-            docentes: result.docentes,
-            ciclos: result.ciclos,
-            cursos: result.cursos
-          });
+          processStatus.value = "✅ Configuración guardada y webhooks activos.";
+          webhookActive.value.cvs = true;
+          webhookActive.value.syllabi = true;
+          webhookActive.value.schedules = true;
 
           setTimeout(() => {
             router.push('/ciclos');
@@ -283,6 +278,7 @@ export default {
       folderList,
       allFoldersSelected,
       processingState,
+      webhookActive,
       isAnyProcessing,
       processStatus,
       errorMessage,

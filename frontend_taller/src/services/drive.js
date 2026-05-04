@@ -1,6 +1,6 @@
-import { processCVs, processSyllabi, processSchedules } from './api';
+import { configWebhook } from './api';
 
-export { processCVs, processSyllabi, processSchedules };
+export { configWebhook };
 
 let pickerApiLoaded = false;
 
@@ -74,18 +74,14 @@ export async function selectFolder(type) {
 }
 
 /**
- * Procesar todos los archivos de las carpetas seleccionadas
+ * Sincronizar y vincular todas las carpetas (Webhooks)
  */
 export async function processAllData(folders) {
   const results = {
-    docentes: [],
-    ciclos: [],
-    cursos: {},
-    historial: null,
-    success: false
+    success: false,
+    messages: []
   };
 
-  // Obtener el token de Google para pasarlo al backend (necesario para descargar archivos)
   const googleToken = localStorage.getItem('googleToken');
   if (!googleToken) {
     alert("No se encontró el token de Google. Por favor, inicie sesión de nuevo.");
@@ -93,41 +89,29 @@ export async function processAllData(folders) {
   }
 
   try {
-    // 1. Procesar CVs
     if (folders.cvs?.id) {
-      console.log('📄 Procesando CVs...');
-      const cvsData = await processCVs(folders.cvs.id, googleToken);
-      results.docentes = cvsData.docentes || [];
-      console.log(`✅ ${cvsData.processed || 0} CVs procesados`);
+      console.log('🔗 Vinculando CVs...');
+      const res = await configWebhook(folders.cvs.id, googleToken);
+      results.messages.push(`CVs: ${res.message}`);
     }
 
-    // 2. Procesar Sílabos
     if (folders.syllabi?.id) {
-      console.log('📘 Procesando sílabos...');
-      const syllabiData = await processSyllabi(folders.syllabi.id, googleToken);
-      results.ciclos = syllabiData.ciclos || [];
-      results.cursos = syllabiData.cursos_por_ciclo || {};
-      console.log(`✅ ${syllabiData.processed || 0} sílabos procesados`);
-      console.log(`📊 Ciclos encontrados:`, results.ciclos);
+      console.log('🔗 Vinculando sílabos...');
+      const res = await configWebhook(folders.syllabi.id, googleToken);
+      results.messages.push(`Sílabos: ${res.message}`);
     }
 
-    // 3. Procesar Horarios (AHORA HABILITADO)
     if (folders.schedules?.id) {
-      console.log('📅 Procesando horarios...');
-      const schedulesData = await processSchedules(folders.schedules.id, googleToken);
-      results.historial = schedulesData;
-      console.log(`✅ Historial actualizado: ${schedulesData.total_history_records_created || 0} registros nuevos`);
-
-      if (schedulesData.errors && schedulesData.errors.length > 0) {
-        console.warn(`⚠️ Hubo ${schedulesData.errors.length} errores procesando horarios.`);
-      }
+      console.log('🔗 Vinculando horarios...');
+      const res = await configWebhook(folders.schedules.id, googleToken);
+      results.messages.push(`Horarios: ${res.message}`);
     }
 
     results.success = true;
     return results;
 
   } catch (error) {
-    console.error('❌ Error procesando datos:', error);
+    console.error('❌ Error configurando webhooks:', error);
     results.error = error.message;
     throw error;
   }
