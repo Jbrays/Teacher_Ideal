@@ -37,7 +37,7 @@ from backend.database import crud
 from backend.database.models import Docente, Curso
 
 # Inicializar la base de datos
-from backend.database.db_session import engine, Base
+from backend.database.db_session import engine, Base, SessionLocal
 import backend.database.models  # Importar explícitamente para asegurar que los modelos están registrados
 
 init_db()
@@ -195,10 +195,27 @@ async def list_folder_files(folder_id: str, authorization: Optional[str] = Heade
         print(f"Error listando archivos: {e}")
         raise HTTPException(status_code=500, detail=f"Error listando archivos: {str(e)}")
 
-import uuid
+from fastapi import Request, BackgroundTasks
+
+def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str):
+    """
+    Procesador central en segundo plano. 
+    Abre y gestiona su propia sesión de base de datos.
+    """
+    db = SessionLocal()
+    try:
+        print(f"🔄 Procesando en segundo plano archivo: {drive_file_id} ({file_name}) - Entidad: {entidad}")
+        
+        # Aquí va la invocación real a pdf_processor, docx_processor o schedule_processor
+        # utilizando la sesión `db` local recién instanciada.
+        
+    except Exception as e:
+        print(f"❌ Error procesando {file_name}: {e}")
+    finally:
+        db.close()
 
 @app.post("/api/webhooks/config/{folder_id}")
-async def config_webhook(folder_id: str, google_token: Optional[str] = Header(None, alias="X-Drive-Token"), user: dict = Depends(get_current_user)):
+async def config_webhook(folder_id: str, background_tasks: BackgroundTasks, google_token: Optional[str] = Header(None, alias="X-Drive-Token"), user: dict = Depends(get_current_user)):
     if not google_token:
         raise HTTPException(status_code=401, detail="Token de Google requerido")
     try:
@@ -213,7 +230,17 @@ async def config_webhook(folder_id: str, google_token: Optional[str] = Header(No
         
         response = drive_service.register_webhook(folder_id, webhook_url, channel_id)
         if response:
-            return {"success": True, "message": "Webhook registrado exitosamente", "channel_id": channel_id}
+            # Procesamiento Híbrido: Obtener archivos preexistentes
+            archivos = drive_service.list_files_in_folder(folder_id)
+            for archivo in archivos:
+                background_tasks.add_task(
+                    process_drive_file_async, 
+                    drive_file_id=archivo['id'], 
+                    file_name=archivo.get('name', 'desconocido'), 
+                    entidad="desconocida" # Se infiere en el procesador por el mime/folder
+                )
+            
+            return {"success": True, "message": f"Webhook activo. Procesando {len(archivos)} archivos preexistentes.", "channel_id": channel_id}
         else:
             raise HTTPException(status_code=500, detail="No se pudo registrar el webhook en Google Drive. Verifica permisos.")
             
@@ -221,7 +248,6 @@ async def config_webhook(folder_id: str, google_token: Optional[str] = Header(No
         raise HTTPException(status_code=500, detail=f"Error configurando webhook: {str(e)}")
 
 # --- 6. WEBHOOKS DE DRIVE (PROCESAMIENTO AUTÓNOMO) ---
-from fastapi import Request, BackgroundTasks
 
 @app.post("/api/webhooks/drive")
 async def drive_webhook(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
@@ -266,16 +292,13 @@ async def drive_webhook(request: Request, background_tasks: BackgroundTasks, db:
         return {"status": "deleted", "drive_file_id": drive_file_id}
         
     elif evento_tipo in ["add", "update", "sync"]:
-        # Aquí se delegaría la tarea a Celery o BackgroundTasks para no bloquear el Webhook
-        def background_process():
-            # Simulación de la lógica de descarga y procesamiento individual
-            print(f"Procesando en segundo plano archivo: {drive_file_id} ({entidad})")
-            # pdf_processor.process...
-            # Borrado quirúrgico de caché:
-            # crud.delete_recomendaciones_cache_by_docente(db, docente.id)
-            pass
-            
-        background_tasks.add_task(background_process)
+        # Tarea delegada a la misma función global asíncrona real
+        background_tasks.add_task(
+            process_drive_file_async,
+            drive_file_id=drive_file_id,
+            file_name="webhook_event",
+            entidad=entidad
+        )
         return {"status": "processing_started", "drive_file_id": drive_file_id}
         
     return {"status": "ignored"}
