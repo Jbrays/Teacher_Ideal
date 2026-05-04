@@ -9,7 +9,8 @@ from dotenv import load_dotenv
 from pathlib import Path
 from pathlib import Path
 import os
-import asyncio 
+import asyncio
+import uuid
 
 # --- 1. CONFIGURACIÓN INICIAL: CARGAR VARIABLES DE ENTORNO ---
 ROOT_DIR = Path(__file__).parent.parent
