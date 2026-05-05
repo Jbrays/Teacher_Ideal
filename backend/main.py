@@ -197,6 +197,16 @@ async def list_folder_files(folder_id: str, authorization: Optional[str] = Heade
         raise HTTPException(status_code=500, detail=f"Error listando archivos: {str(e)}")
 
 from fastapi import Request, BackgroundTasks
+import time
+
+def process_historical_queue(archivos: list, entidad_inferida: str):
+    """
+    Procesa una lista de archivos secuencialmente con pausas para liberar RAM.
+    """
+    for archivo in archivos:
+        process_drive_file_async(archivo['id'], archivo.get('name', 'desconocido'), entidad_inferida)
+        time.sleep(3)  # Permite al Garbage Collector liberar memoria de pdfplumber
+
 
 def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str):
     """
@@ -295,13 +305,8 @@ async def config_webhook(folder_id: str, background_tasks: BackgroundTasks, goog
             
             archivos = archivos_data.get('files', [])
             
-            for archivo in archivos:
-                background_tasks.add_task(
-                    process_drive_file_async, 
-                    drive_file_id=archivo['id'], 
-                    file_name=archivo.get('name', 'desconocido'), 
-                    entidad="desconocida" # Se infiere en el procesador
-                )
+            # Encolar la lista completa para ser procesada secuencialmente
+            background_tasks.add_task(process_historical_queue, archivos, "desconocida")
             
             return {"success": True, "message": f"Webhook activo. Procesando {len(archivos)} archivos preexistentes.", "channel_id": channel_id}
         else:
