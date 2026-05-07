@@ -202,16 +202,23 @@ import threading
 
 drive_download_lock = threading.Lock()
 
-def process_historical_queue(archivos: list, entidad_inferida: str):
+folder_tokens = {}
+
+def process_historical_queue(archivos: list, entidad_inferida: str, folder_id: str):
     """
     Procesa una lista de archivos secuencialmente con pausas para liberar RAM.
     """
+    access_token = folder_tokens.get(folder_id)
+    if not access_token:
+        print(f"❌ Error: No se encontró access_token en memoria para el folder_id {folder_id}. Abortando.")
+        return
+
     for archivo in archivos:
-        process_drive_file_async(archivo['id'], archivo.get('name', 'desconocido'), entidad_inferida)
+        process_drive_file_async(archivo['id'], archivo.get('name', 'desconocido'), entidad_inferida, access_token)
         time.sleep(3)  # Permite al Garbage Collector liberar memoria de pdfplumber
 
 
-def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str):
+def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, access_token: str):
     """
     Procesador central en segundo plano. 
     Abre y gestiona su propia sesión de base de datos.
@@ -239,7 +246,7 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str):
         
         # 2. Descarga
         with drive_download_lock:
-            file_bytes = drive_service.download_file(drive_file_id)
+            file_bytes = drive_service.download_file_thread_safe(drive_file_id, access_token)
             
         if not file_bytes:
             raise Exception("No se pudo descargar el archivo.")
@@ -299,6 +306,10 @@ async def config_webhook(folder_id: str, background_tasks: BackgroundTasks, goog
         
         channel_id = str(uuid.uuid4())
         
+        # Guardar token en memoria
+        folder_tokens[folder_id] = google_token
+        folder_tokens[channel_id] = google_token
+        
         # URL base de producción, podría ser una variable de entorno en el futuro
         base_url = os.environ.get("WEBHOOK_BASE_URL", "https://teacher-ideal-121734839794.us-central1.run.app")
         webhook_url = f"{base_url}/api/webhooks/drive"
@@ -324,7 +335,7 @@ async def config_webhook(folder_id: str, background_tasks: BackgroundTasks, goog
                     break
             
             # Encolar la lista completa para ser procesada secuencialmente
-            background_tasks.add_task(process_historical_queue, archivos, "desconocida")
+            background_tasks.add_task(process_historical_queue, archivos, "desconocida", folder_id)
             
             return {"success": True, "message": f"Webhook activo. Procesando {len(archivos)} archivos preexistentes.", "channel_id": channel_id}
         else:
@@ -377,13 +388,19 @@ async def drive_webhook(request: Request, background_tasks: BackgroundTasks, db:
                 db.commit()
         return {"status": "deleted", "drive_file_id": drive_file_id}
         
-    elif evento_tipo in ["add", "update", "sync"]:
+    elif evento_tipo in ["add", "update"]:
+        access_token = folder_tokens.get(channel_id)
+        if not access_token:
+            print(f"❌ Error: No se encontró access_token en memoria para el channel_id {channel_id}. Ignorando.")
+            return {"status": "error", "message": "No access_token found"}
+
         # Tarea delegada a la misma función global asíncrona real
         background_tasks.add_task(
             process_drive_file_async,
             drive_file_id=drive_file_id,
             file_name="webhook_event",
-            entidad=entidad
+            entidad=entidad,
+            access_token=access_token
         )
         return {"status": "processing_started", "drive_file_id": drive_file_id}
         

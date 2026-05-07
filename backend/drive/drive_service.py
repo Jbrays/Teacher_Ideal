@@ -3,6 +3,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from typing import List, Dict, Optional, Any
 import os
+import socket
 
 
 class DriveService:
@@ -178,6 +179,7 @@ class DriveService:
             Contenido del archivo en bytes
         """
         try:
+            socket.setdefaulttimeout(30)
             if not self.service:
                 return None
             
@@ -187,6 +189,9 @@ class DriveService:
             print(f"✅ Archivo descargado: {len(file_content)} bytes")
             return file_content
             
+        except socket.timeout as e:
+            print(f"❌ Error descargando archivo (Timeout de 30s): {e}")
+            return None
         except HttpError as e:
             print(f"❌ Error descargando archivo: {e}")
             return None
@@ -235,6 +240,7 @@ class DriveService:
         Descarga segura para hilos: Crea una instancia nueva del servicio para evitar conflictos SSL.
         """
         try:
+            socket.setdefaulttimeout(30)
             # Construir servicio local (aislado del global)
             creds = Credentials(token=access_token)
             local_service = build('drive', 'v3', credentials=creds, cache_discovery=False)
@@ -245,6 +251,9 @@ class DriveService:
             print(f"✅ Archivo descargado (Thread-Safe): {len(file_content)} bytes")
             return file_content
             
+        except socket.timeout as e:
+            print(f"❌ Error descarga thread-safe (Timeout de 30s): {e}")
+            return None
         except Exception as e:
             print(f"❌ Error descarga thread-safe: {e}")
             return None
