@@ -214,8 +214,13 @@ def process_historical_queue(archivos: list, entidad_inferida: str, folder_id: s
         return
 
     for archivo in archivos:
-        process_drive_file_async(archivo['id'], archivo.get('name', 'desconocido'), entidad_inferida, access_token)
-        time.sleep(3)  # Permite al Garbage Collector liberar memoria de pdfplumber
+        archivo_nombre = archivo.get('name', 'desconocido')
+        try:
+            process_drive_file_async(archivo['id'], archivo_nombre, entidad_inferida, access_token)
+        except Exception as e:
+            print(f"❌ Error fatal procesando archivo {archivo_nombre} en la cola histórica: {e}")
+        finally:
+            time.sleep(3)  # Permite al Garbage Collector liberar memoria de pdfplumber
 
 
 def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, access_token: str):
