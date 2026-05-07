@@ -300,6 +300,10 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, a
 async def config_webhook(folder_id: str, background_tasks: BackgroundTasks, google_token: Optional[str] = Header(None, alias="X-Drive-Token"), user: dict = Depends(get_current_user)):
     if not google_token:
         raise HTTPException(status_code=401, detail="Token de Google requerido")
+    
+    if folder_id in folder_tokens:
+        return {"success": True, "message": "Carpeta ya configurada previamente"}
+        
     try:
         if not drive_service.build_service(google_token):
             raise HTTPException(status_code=500, detail="Error conectando con Drive")

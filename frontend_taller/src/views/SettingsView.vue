@@ -50,37 +50,24 @@
             @click="selectFolderHandler(folder.key)"
             class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-xl font-semibold shadow transition"
           >
-            Seleccionar carpeta
+            {{ folderState[folder.key]?.id ? 'Cambiar carpeta' : 'Seleccionar carpeta' }}
           </button>
 
           <p v-if="folderState[folder.key]?.id" class="text-sm font-medium text-green-700 mt-2 mb-1">
             Carpeta vinculada: "{{ folderState[folder.key].name }}"
           </p>
-
-          <div class="flex flex-col gap-2 mt-2">
-            <button
-              v-if="folderState[folder.key]?.id && !webhookActive[folder.key]"
-              @click="processIndividual(folder.key)"
-              :disabled="processingState[folder.key]"
-              class="w-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 py-2 rounded-xl font-medium shadow-sm transition flex items-center justify-center gap-2"
-            >
-              <span v-if="processingState[folder.key]" class="animate-spin">⏳</span>
-              {{ processingState[folder.key] ? 'Vinculando...' : 'Sincronizar y Vincular' }}
-            </button>
-            <div v-else-if="webhookActive[folder.key]" class="w-full flex items-center justify-center py-2 bg-green-50 text-green-700 rounded-xl font-medium border border-green-200">
-              ✅ Webhook Activo
-            </div>
-          </div>
         </div>
 
         <div class="border-t border-gray-200 my-6"></div>
 
         <button
-          :disabled="!allFoldersSelected || isAnyProcessing"
+          :disabled="!allFoldersSelected || isAnyProcessing || isSynced"
           @click="processData"
-          class="w-full bg-gray-800 hover:bg-gray-900 text-white py-3 rounded-xl font-semibold shadow transition"
+          class="w-full bg-gray-800 hover:bg-gray-900 text-white py-3 rounded-xl font-semibold shadow transition disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
-          {{ isAnyProcessing ? 'Sincronizando...' : 'Guardar Configuración y Sincronizar Todo' }}
+          <span v-if="isSynced">Sincronización completada ✓</span>
+          <span v-else-if="isAnyProcessing">Procesando...</span>
+          <span v-else>Guardar Configuración y Sincronizar Todo</span>
         </button>
 
         <p v-if="processStatus" class="text-gray-500 text-sm mt-3 whitespace-pre-line">
@@ -111,6 +98,7 @@ export default {
     const store = useAppStore();
     const router = useRouter();
     const userEmail = ref("");
+    const isSynced = ref(false);
     
     // Estado de procesamiento individual
     const processingState = ref({
@@ -164,6 +152,24 @@ export default {
         syllabi: store.folders.syllabi,
         schedules: store.folders.schedules,
       };
+
+      // Verificar sincronización previa
+      const syncedStr = localStorage.getItem('teacher_ideal_synced_folders');
+      if (syncedStr) {
+        try {
+          const syncedData = JSON.parse(syncedStr);
+          if (
+            syncedData.cvs === folderState.value.cvs?.id &&
+            syncedData.syllabi === folderState.value.syllabi?.id &&
+            syncedData.schedules === folderState.value.schedules?.id &&
+            folderState.value.cvs?.id
+          ) {
+            isSynced.value = true;
+          }
+        } catch (e) {
+          console.error("Error parseando synced folders:", e);
+        }
+      }
     });
 
     const goBack = () => {
@@ -194,6 +200,17 @@ export default {
         if (folder) {
           folderState.value[type] = folder;
           store.setFolder(type, folder);
+          
+          // Limpiar localstorage y habilitar boton
+          const syncedStr = localStorage.getItem('teacher_ideal_synced_folders');
+          if (syncedStr) {
+            try {
+              const syncedData = JSON.parse(syncedStr);
+              delete syncedData[type];
+              localStorage.setItem('teacher_ideal_synced_folders', JSON.stringify(syncedData));
+            } catch(e) {}
+          }
+          isSynced.value = false;
         }
       } catch (error) {
         console.error(`Error seleccionando carpeta ${type}:`, error);
@@ -207,60 +224,46 @@ export default {
       return token;
     };
 
-    const processIndividual = async (type) => {
-      if (!folderState.value[type]?.id) {
-        errorMessage.value = `Selecciona la carpeta de ${type} primero.`;
-        return;
-      }
-
-      try {
-        processingState.value[type] = true;
-        errorMessage.value = "";
-        processStatus.value = `Vinculando ${type}...`;
-        
-        const token = getGoogleToken();
-        const result = await configWebhook(folderState.value[type].id, token);
-        
-        if (result.success) {
-          webhookActive.value[type] = true;
-          processStatus.value = `✅ ${type}: ${result.message}`;
-        }
-      } catch (error) {
-        console.error(`Error procesando ${type}:`, error);
-        errorMessage.value = error.message;
-        processStatus.value = "";
-      } finally {
-        processingState.value[type] = false;
-      }
-    };
-
     const processData = async () => {
       if (!allFoldersSelected.value) {
-        errorMessage.value = "Selecciona todas las carpetas primero";
+        errorMessage.value = "Falta seleccionar una o más carpetas.";
         return;
       }
 
       try {
-        // Activar todos los estados de carga visualmente
         processingState.value.cvs = true;
         processingState.value.syllabi = true;
         processingState.value.schedules = true;
         
         errorMessage.value = "";
-        processStatus.value = "Sincronizando TODO...";
+        processStatus.value = "Iniciando configuración secuencial...";
 
-        const result = await processAllData(folderState.value);
-
-        if (result.success) {
-          processStatus.value = "✅ Configuración guardada y webhooks activos.";
-          webhookActive.value.cvs = true;
-          webhookActive.value.syllabi = true;
-          webhookActive.value.schedules = true;
-
-          setTimeout(() => {
-            router.push('/ciclos');
-          }, 1500);
+        const token = getGoogleToken();
+        const keys = ['cvs', 'syllabi', 'schedules'];
+        
+        for (const type of keys) {
+            processStatus.value = `Procesando carpeta de ${type}...`;
+            const result = await configWebhook(folderState.value[type].id, token);
+            if (!result.success) {
+                throw new Error(`Error vinculando ${type}: ${result.message || 'Desconocido'}`);
+            }
         }
+
+        processStatus.value = "✅ Configuración guardada y webhooks activos.";
+        
+        // Guardar exitosos en localStorage
+        const syncedData = {
+          cvs: folderState.value.cvs.id,
+          syllabi: folderState.value.syllabi.id,
+          schedules: folderState.value.schedules.id
+        };
+        localStorage.setItem('teacher_ideal_synced_folders', JSON.stringify(syncedData));
+        isSynced.value = true;
+
+        setTimeout(() => {
+          router.push('/ciclos');
+        }, 1500);
+        
       } catch (error) {
         console.error("Error procesando archivos:", error);
         errorMessage.value = error.message;
@@ -286,7 +289,7 @@ export default {
       logout,
       selectFolderHandler,
       processData,
-      processIndividual
+      isSynced
     };
   },
 };
