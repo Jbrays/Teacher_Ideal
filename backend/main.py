@@ -198,6 +198,9 @@ async def list_folder_files(folder_id: str, authorization: Optional[str] = Heade
 
 from fastapi import Request, BackgroundTasks
 import time
+import threading
+
+drive_download_lock = threading.Lock()
 
 def process_historical_queue(archivos: list, entidad_inferida: str):
     """
@@ -213,6 +216,10 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str):
     Procesador central en segundo plano. 
     Abre y gestiona su propia sesión de base de datos.
     """
+    if file_name == 'webhook_event' or drive_file_id == 'test_id':
+        print("Ignorando ping de prueba del webhook de Drive.")
+        return
+        
     db = SessionLocal()
     try:
         # 1. Inferencia de Entidad
@@ -231,7 +238,9 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str):
         print(f"🔄 Descargando y procesando {entidad}: {file_name}")
         
         # 2. Descarga
-        file_bytes = drive_service.download_file(drive_file_id)
+        with drive_download_lock:
+            file_bytes = drive_service.download_file(drive_file_id)
+            
         if not file_bytes:
             raise Exception("No se pudo descargar el archivo.")
 
@@ -296,14 +305,23 @@ async def config_webhook(folder_id: str, background_tasks: BackgroundTasks, goog
         
         response = drive_service.register_webhook(folder_id, webhook_url, channel_id)
         if response:
-            # Procesamiento Híbrido: Obtener archivos preexistentes usando la API nativa
-            archivos_data = drive_service.service.files().list(
-                q=f"'{folder_id}' in parents and trashed=false",
-                fields="files(id, name)",
-                pageSize=100
-            ).execute()
+            # Procesamiento Híbrido: Obtener archivos preexistentes (Paginación Completa)
+            archivos = []
+            page_token = None
             
-            archivos = archivos_data.get('files', [])
+            while True:
+                archivos_data = drive_service.service.files().list(
+                    q=f"'{folder_id}' in parents and trashed=false",
+                    fields="nextPageToken, files(id, name)",
+                    pageSize=1000,
+                    pageToken=page_token
+                ).execute()
+                
+                archivos.extend(archivos_data.get('files', []))
+                page_token = archivos_data.get('nextPageToken')
+                
+                if not page_token:
+                    break
             
             # Encolar la lista completa para ser procesada secuencialmente
             background_tasks.add_task(process_historical_queue, archivos, "desconocida")

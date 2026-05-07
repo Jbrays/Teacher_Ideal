@@ -70,21 +70,13 @@ class PDFProcessor:
                 return json.loads(cleaned_text)
                 
             except Exception as e:
-                error_str = str(e)
-                is_json_error = "Expecting value" in error_str or "Unterminated string" in error_str or "JSONDecodeError" in type(e).__name__
-                is_quota_error = "429" in error_str or "Resource exhausted" in error_str
-                
-                if is_quota_error or is_json_error:
-                    wait_time = (attempt + 1) * 10 # 10s, 20s, 30s
-                    error_type = "Quota (429)" if is_quota_error else "JSON Truncated"
-                    logger.warning(f"⚠️ {error_type} en {filename}. Reintentando en {wait_time}s... ({attempt+1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    wait_time = 5 * (attempt + 1)
+                    logger.warning(f"⚠️ Error en Vertex AI ({e}). Reintentando en {wait_time}s... ({attempt+1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
-                    logger.error(f"Error procesando {filename} en Vertex AI: {e}")
+                    logger.error(f"❌ Falló Vertex AI definitivamente tras {max_retries} intentos para {filename}: {e}")
                     return {}
-        
-        logger.error(f"❌ Falló Vertex AI tras {max_retries} intentos para {filename}")
-        return {}
 
     def extract_cv_info(self, pdf_content: bytes, filename: str = "") -> Dict:
         try:

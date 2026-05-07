@@ -83,20 +83,16 @@ class DOCXProcessor:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                # Rate Limiting: Esperar un poco antes de cada intento
-                time.sleep(2 + (attempt * 2)) 
-                
                 response = self.model.generate_content(prompt)
                 cleaned_response = response.text.replace("```json", "").replace("```", "").strip()
                 return json.loads(cleaned_response)
             except Exception as e:
-                error_str = str(e)
-                if "429" in error_str or "Resource exhausted" in error_str:
-                    wait_time = (attempt + 1) * 10
-                    logger.warning(f"⚠️ Quota excedida (429) en sílabo. Reintentando en {wait_time}s... ({attempt+1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    wait_time = 5 * (attempt + 1)
+                    logger.warning(f"⚠️ Error en Vertex AI ({e}). Reintentando sílabo en {wait_time}s... ({attempt+1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
-                    logger.error(f"Error parsing sílabo con Vertex AI: {e}")
+                    logger.error(f"❌ Falló Vertex AI de forma definitiva para el sílabo tras {max_retries} intentos: {e}")
                     return {}
         
         return {}

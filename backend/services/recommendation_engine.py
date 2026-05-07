@@ -13,7 +13,8 @@ import torch
 
 # Cargar modelo SBERT optimizado
 try:
-    model = SentenceTransformer('BAAI/bge-m3', model_kwargs={"torch_dtype": torch.float16})
+    model = SentenceTransformer('BAAI/bge-m3')
+    model.half()
 except Exception as e:
     print(f"Error cargando SBERT: {e}")
     model = None
