@@ -267,8 +267,8 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, a
                 raise Exception(data.get("error", "Error desconocido en CV"))
 
         elif entidad == "curso":
-            from backend.services.docx_processor import DocxProcessor
-            processor = DocxProcessor()
+            from backend.services.docx_processor import DOCXProcessor
+            processor = DOCXProcessor()
             data = processor.extract_syllabus_info(file_bytes, file_name)
             if data.get("success", False) or "nombre" in data:
                 processor.save_curso_to_db(db, data, drive_file_id)
