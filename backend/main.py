@@ -325,23 +325,8 @@ async def config_webhook(folder_id: str, background_tasks: BackgroundTasks, goog
         
         response = drive_service.register_webhook(folder_id, webhook_url, channel_id)
         if response:
-            # Procesamiento Híbrido: Obtener archivos preexistentes (Paginación Completa)
-            archivos = []
-            page_token = None
-            
-            while True:
-                archivos_data = drive_service.service.files().list(
-                    q=f"'{folder_id}' in parents and trashed=false",
-                    fields="nextPageToken, files(id, name)",
-                    pageSize=1000,
-                    pageToken=page_token
-                ).execute()
-                
-                archivos.extend(archivos_data.get('files', []))
-                page_token = archivos_data.get('nextPageToken')
-                
-                if not page_token:
-                    break
+            # Procesamiento Híbrido: Obtener archivos preexistentes (recursivo, Shared Drives)
+            archivos = drive_service.list_files_in_folder(folder_id, file_types=None, recursive=True)
             
             # Encolar la lista completa para ser procesada secuencialmente
             background_tasks.add_task(process_historical_queue, archivos, "desconocida", folder_id)
