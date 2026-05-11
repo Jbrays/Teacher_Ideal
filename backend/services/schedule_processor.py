@@ -209,6 +209,7 @@ class ScheduleProcessor:
         OPTIMIZACIÓN: Carga todos los docentes y cursos en memoria una sola vez
         para evitar consultas repetitivas dentro del bucle.
         """
+        print(f'save_history_to_db recibió {len(data)} registros')
         if not data:
             return 0
             
@@ -222,7 +223,7 @@ class ScheduleProcessor:
             
             # Convertimos a diccionarios para búsqueda O(1)
             docentes_cache = {d.nombre.strip().upper(): d for d in all_docentes if d.nombre}
-            cursos_cache = {c.codigo: c for c in all_cursos if c.codigo}
+            cursos_cache = {re.sub(r'[\s\-]', '', c.codigo).upper(): c for c in all_cursos if c.codigo}
             
             logger.info(f"📚 Catálogo indexado: {len(docentes_cache)} docentes por nombre, {len(cursos_cache)} cursos con código.")
 
@@ -244,7 +245,8 @@ class ScheduleProcessor:
 
             for item in data:
                 docente_nombre = item.get('docente_nombre', '').strip()
-                curso = cursos_cache.get(item.get('curso_codigo'))
+                curso_codigo_norm = re.sub(r'[\s\-]', '', item.get('curso_codigo', '')).upper()
+                curso = cursos_cache.get(curso_codigo_norm)
                 
                 if not docente_nombre or not curso: 
                     continue
