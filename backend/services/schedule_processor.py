@@ -164,6 +164,8 @@ class ScheduleProcessor:
                             if isinstance(data, dict):
                                 if "asignaciones" in data: data = data["asignaciones"]
                                 else: data = [data]
+                            
+                            print(f'Batch {i//batch_size + 1}: {len(data)} registros extraídos. Muestra: {data[:2]}')
                                 
                             # Procesar y limpiar datos del lote
                             for d in data:
