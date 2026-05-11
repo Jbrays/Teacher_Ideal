@@ -121,7 +121,7 @@ class ScheduleProcessor:
                     
                     prompt = f"""
                     Analiza este TEXTO extraído de varias páginas de un horario universitario.
-                    Extrae TODAS las asignaciones de cursos a docentes basándote EXCLUSIVAMENTE en códigos.
+                    Extrae TODAS las asignaciones de cursos a docentes.
                     
                     TEXTO DEL LOTE:
                     {batch_text}
@@ -129,12 +129,12 @@ class ScheduleProcessor:
                     Reglas:
                     1. Ignora "STAFF" o "DOCENTE" genérico.
                     2. Extrae estrictamente el CÓDIGO institucional del curso (ej: "ICSI424").
-                    3. Extrae estrictamente el CÓDIGO ÚNICO del docente (ID_DOC).
+                    3. Extrae el NOMBRE COMPLETO del docente tal como aparece en el texto.
                     4. IGNORA el periodo del texto, usaremos uno global.
                     
                     Salida JSON (Lista de objetos estricta):
                     [
-                        {{"curso_codigo": "ICSI424", "docente_id": "000123"}}
+                        {{"curso_codigo": "ICSI424", "docente_nombre": "PEREZ PEREZ, JUAN"}}
                     ]
                     """
                     
@@ -167,7 +167,7 @@ class ScheduleProcessor:
                                 
                             # Procesar y limpiar datos del lote
                             for d in data:
-                                if not d.get('docente_id') or not d.get('curso_codigo'):
+                                if not d.get('docente_nombre') or not d.get('curso_codigo'):
                                     continue
                                 
                                 # FORZAR PERIODO GLOBAL
@@ -218,19 +218,52 @@ class ScheduleProcessor:
             all_docentes = db.query(Docente).all()
             all_cursos = db.query(Curso).all()
             
-            # Convertimos a diccionarios para búsqueda O(1) usando los códigos exactos
-            docentes_cache = {d.id_upao: d for d in all_docentes if d.id_upao}
+            # Convertimos a diccionarios para búsqueda O(1)
+            docentes_cache = {d.nombre.strip().upper(): d for d in all_docentes if d.nombre}
             cursos_cache = {c.codigo: c for c in all_cursos if c.codigo}
             
-            logger.info(f"📚 Catálogo indexado: {len(docentes_cache)} docentes con ID_DOC, {len(cursos_cache)} cursos con código.")
+            logger.info(f"📚 Catálogo indexado: {len(docentes_cache)} docentes por nombre, {len(cursos_cache)} cursos con código.")
+
+            import unicodedata
+            
+            def normalize_name(s):
+                s = unicodedata.normalize('NFD', s).encode('ascii', 'ignore').decode('utf-8')
+                s = re.sub(r'[^A-Z0-9 ]', ' ', s.upper())
+                return s.split()
+
+            def match_score(nombre_horario, nombre_bd):
+                words_a = normalize_name(nombre_horario)
+                words_b = normalize_name(nombre_bd)
+                shorter, longer = (words_a, words_b) if len(words_a) <= len(words_b) else (words_b, words_a)
+                matches = sum(1 for w in shorter if w in longer)
+                return matches / len(shorter) if shorter else 0
 
             aggregated_entries = {}
 
             for item in data:
-                docente = docentes_cache.get(item.get('docente_id'))
+                docente_nombre = item.get('docente_nombre', '').strip()
                 curso = cursos_cache.get(item.get('curso_codigo'))
                 
-                if not docente or not curso: 
+                if not docente_nombre or not curso: 
+                    continue
+                    
+                best_match = None
+                best_score = 0
+                for nombre_bd, doc_obj in docentes_cache.items():
+                    score = match_score(docente_nombre, nombre_bd)
+                    if score > best_score:
+                        best_score = score
+                        best_match = doc_obj
+                        
+                docente = None
+                if best_score >= 0.8:
+                    docente = best_match
+                    print(f"✅ Match: Horario='{docente_nombre}' | BD='{docente.nombre}' | Score={best_score:.2f}")
+                else:
+                    best_name = best_match.nombre if best_match else 'None'
+                    print(f"❌ No match: Horario='{docente_nombre}' | Best BD='{best_name}' | Score={best_score:.2f}")
+
+                if not docente:
                     continue
                 
                 # Clave única para agregación
