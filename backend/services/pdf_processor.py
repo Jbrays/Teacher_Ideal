@@ -42,8 +42,10 @@ class PDFProcessor:
 
         prompt = """
         Analiza este PDF (Curriculum Vitae) y devuelve un JSON estricto con el siguiente formato.
-        IMPORTANTE: 'perfil_sintetico' debe ser un resumen denso y redactado de habilidades, experiencia y estudios.
-        'entidades_clave' debe ser una lista de strings con tecnologías, metodologías o áreas de conocimiento detectadas.
+        IMPORTANTE: 
+        - 'nombre' debe ser EXCLUSIVAMENTE el nombre completo de la persona (el profesor o candidato). NUNCA extraigas nombres de universidades, empresas o instituciones en este campo.
+        - 'perfil_sintetico' debe ser un resumen denso y redactado de habilidades, experiencia y estudios.
+        - 'entidades_clave' debe ser una lista de strings con tecnologías, metodologías o áreas de conocimiento detectadas.
         {
             "nombre": "string",
             "email": "string",
