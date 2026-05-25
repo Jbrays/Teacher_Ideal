@@ -20,6 +20,10 @@ COPY requirements.txt .
 # Instalamos las dependencias de Python (incluyendo el modelo de Spacy)
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-descargamos el modelo SBERT para que quede "horneado" en la imagen de Docker
+# Esto evita descargar 2.2 GB en cada inicio del contenedor, previniendo fallos en Cloud Run
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-m3')"
+
 # Copiamos todo el código fuente del backend al contenedor
 COPY backend/ ./backend/
 
