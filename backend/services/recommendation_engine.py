@@ -10,20 +10,31 @@ from backend.database.models import Curso, Docente
 from backend.services.explanation_model import ExplanationModel
 
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
-# Cargar modelo SBERT optimizado
-try:
-    model = SentenceTransformer('BAAI/bge-m3')
-    model.half()
-except Exception as e:
-    logger.error(f"Error cargando SBERT: {e}")
-    model = None
+# Forzar a HuggingFace a usar SOLO el modelo pre-horneado en Docker
+# Evita el error "429 Too Many Requests" en Cloud Run
+os.environ["HF_HUB_OFFLINE"] = "1"
+
+# Variable global para lazy loading
+_sbert_model = None
+
+def get_sbert_model():
+    global _sbert_model
+    if _sbert_model is None:
+        logger.info("Cargando modelo SBERT BAAI/bge-m3 a memoria por primera vez (esto puede tardar)...")
+        try:
+            _sbert_model = SentenceTransformer('BAAI/bge-m3')
+            _sbert_model.half()
+            logger.info("Modelo SBERT cargado exitosamente.")
+        except Exception as e:
+            logger.error(f"Error cargando SBERT: {e}")
+    return _sbert_model
 
 class RecommendationEngine:
     def __init__(self):
-        self.model = model
         self.explanation_model = ExplanationModel()
 
     def create_curso_text(self, curso: Curso) -> str:
@@ -45,9 +56,10 @@ class RecommendationEngine:
         }
 
     def get_embedding_for_text(self, text: str) -> np.ndarray:
-        if not self.model:
+        model = get_sbert_model()
+        if not model:
             raise Exception("Modelo SBERT no cargado")
-        return self.model.encode([text], convert_to_numpy=True)[0].reshape(1, -1)
+        return model.encode([text], convert_to_numpy=True)[0].reshape(1, -1)
 
     def recommend_docentes_for_curso(
         self,
