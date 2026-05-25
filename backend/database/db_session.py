@@ -2,6 +2,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Configuración estricta para la nube (Neon PostgreSQL)
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -35,6 +38,6 @@ def init_db():
     from . import models  # Importar modelos
     try:
         Base.metadata.create_all(bind=engine)
-        print("Base de datos inicializada")
+        logger.info("Base de datos inicializada")
     except Exception as e:
-        print(f"⚠️ Advertencia: Error conectando a la base de datos en el arranque. El servidor iniciará, pero las operaciones a DB fallarán: {e}")
+        logger.warning(f"⚠️ Advertencia: Error conectando a la base de datos en el arranque. El servidor iniciará, pero las operaciones a DB fallarán: {e}")

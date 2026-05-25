@@ -1,9 +1,11 @@
 import firebase_admin
 from firebase_admin import credentials, auth
-from google.oauth2 import service_account
-from google.auth.transport.requests import Request
 import os
+import json
+import logging
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 class FirebaseAuth:
     def __init__(self):
@@ -25,32 +27,32 @@ class FirebaseAuth:
                     cred_dict = json.loads(cred_json)
                     cred = credentials.Certificate(cred_dict)
                     self.app = firebase_admin.initialize_app(cred)
-                    print("Firebase Admin SDK inicializado desde JSON en variable de entorno")
+                    logger.info("Firebase Admin SDK inicializado desde JSON en variable de entorno")
                 elif cred_path and os.path.exists(cred_path):
                     # En local: Lee el archivo físico si existe
                     cred = credentials.Certificate(cred_path)
                     self.app = firebase_admin.initialize_app(cred)
-                    print("Firebase Admin SDK inicializado correctamente desde archivo")
+                    logger.info("Firebase Admin SDK inicializado correctamente desde archivo")
                 else:
                     # Si todo falla, intenta usar Credenciales por Defecto de la Aplicación (ADC) de Google Cloud
                     try:
                         self.app = firebase_admin.initialize_app()
-                        print("Firebase Admin SDK inicializado con Credenciales por Defecto (ADC)")
+                        logger.info("Firebase Admin SDK inicializado con Credenciales por Defecto (ADC)")
                     except Exception as e:
-                        print("No se encontraron credenciales de Firebase válidas (JSON, Path o ADC)")
+                        logger.warning("No se encontraron credenciales de Firebase válidas (JSON, Path o ADC)")
             else:
                 self.app = firebase_admin.get_app()
-                print("Firebase Admin SDK ya estaba inicializado")
+                logger.info("Firebase Admin SDK ya estaba inicializado")
                 
         except Exception as e:
-            print(f"Error inicializando Firebase: {e}")
+            logger.error(f"Error inicializando Firebase: {e}")
             self.app = None
     
     def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Verificar token de Firebase y obtener información del usuario"""
         try:
             if not self.app:
-                print("❌ Firebase no está inicializado")
+                logger.error("❌ Firebase no está inicializado")
                 return None
                 
             # Verificar el token
@@ -65,7 +67,7 @@ class FirebaseAuth:
             }
             
         except Exception as e:
-            print(f"❌ Error verificando token: {e}")
+            logger.error(f"❌ Error verificando token: {e}")
             return None
     
     def get_user(self, uid: str) -> Optional[Dict[str, Any]]:
@@ -86,7 +88,7 @@ class FirebaseAuth:
             }
             
         except Exception as e:
-            print(f"❌ Error obteniendo usuario: {e}")
+            logger.error(f"❌ Error obteniendo usuario: {e}")
             return None
     
     def create_custom_token(self, uid: str, additional_claims: Optional[Dict] = None) -> Optional[str]:
@@ -99,7 +101,7 @@ class FirebaseAuth:
             return custom_token.decode('utf-8')
             
         except Exception as e:
-            print(f"❌ Error creando token personalizado: {e}")
+            logger.error(f"❌ Error creando token personalizado: {e}")
             return None
 
 # Instancia global
