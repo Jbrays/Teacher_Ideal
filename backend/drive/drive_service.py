@@ -4,6 +4,9 @@ from googleapiclient.errors import HttpError
 from typing import List, Dict, Optional, Any
 import os
 import socket
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DriveService:
@@ -24,7 +27,7 @@ class DriveService:
             self.service = build('drive', 'v3', credentials=credentials)
             return True
         except Exception as e:
-            print(f"Error construyendo servicio Drive: {e}")
+            logger.error(f"Error construyendo servicio Drive: {e}")
             return False
     
     def list_folders(self, parent_id: Optional[str] = None, max_results: int = 100) -> List[Dict[str, Any]]:
@@ -55,14 +58,14 @@ class DriveService:
             ).execute()
             
             folders = results.get('files', [])
-            print(f"Encontradas {len(folders)} carpetas")
+            logger.info(f"Encontradas {len(folders)} carpetas")
             return folders
             
         except HttpError as e:
-            print(f"Error listando carpetas: {e}")
+            logger.error(f"Error listando carpetas: {e}")
             return []
         except Exception as e:
-            print(f"Error inesperado: {e}")
+            logger.error(f"Error inesperado listando carpetas: {e}")
             return []
     
     def list_files_in_folder(self, folder_id: str, file_types: Optional[List[str]] = None, recursive: bool = True) -> List[Dict[str, Any]]:
@@ -86,7 +89,7 @@ class DriveService:
             # Primero, obtener todos los archivos directos (no carpetas)
             query = f"'{folder_id}' in parents and trashed=false and mimeType != 'application/vnd.google-apps.folder'"
             
-            print(f"🔍 Query: {query}")
+            logger.debug(f"🔍 Query Drive: {query}")
             
             results = self.service.files().list(
                 q=query,
@@ -98,16 +101,16 @@ class DriveService:
             ).execute()
             
             files = results.get('files', [])
-            print(f"📄 Encontrados {len(files)} archivos directos en carpeta {folder_id}")
+            logger.info(f"📄 Encontrados {len(files)} archivos directos en carpeta {folder_id}")
             
             # Mostrar los tipos MIME encontrados
             mime_types = set([f.get('mimeType') for f in files])
-            print(f"📋 Tipos MIME encontrados: {mime_types}")
+            logger.debug(f"📋 Tipos MIME encontrados: {mime_types}")
             
             # Filtrar por tipos si se especifican
             if file_types:
                 files = [f for f in files if f.get('mimeType') in file_types]
-                print(f"✅ Después de filtrar: {len(files)} archivos")
+                logger.info(f"✅ Después de filtrar: {len(files)} archivos")
             
             all_files.extend(files)
             
@@ -123,21 +126,21 @@ class DriveService:
                 ).execute()
                 
                 subfolders = subfolder_results.get('files', [])
-                print(f"📁 Encontradas {len(subfolders)} subcarpetas")
+                logger.info(f"📁 Encontradas {len(subfolders)} subcarpetas")
                 
                 for subfolder in subfolders:
-                    print(f"  📁 Buscando en subcarpeta: {subfolder['name']}")
+                    logger.debug(f"  📁 Buscando en subcarpeta: {subfolder['name']}")
                     subfolder_files = self.list_files_in_folder(subfolder['id'], file_types, recursive=True)
                     all_files.extend(subfolder_files)
             
-            print(f"✅ Total: {len(all_files)} archivos encontrados")
+            logger.info(f"✅ Total: {len(all_files)} archivos encontrados")
             return all_files
             
         except HttpError as e:
-            print(f"❌ Error listando archivos (HTTP): {e}")
+            logger.error(f"❌ Error listando archivos (HTTP): {e}")
             raise Exception(f"Error de permisos o conexión con Drive: {e}")
         except Exception as e:
-            print(f"❌ Error inesperado listando archivos: {e}")
+            logger.error(f"❌ Error inesperado listando archivos: {e}")
             raise Exception(f"Error inesperado al leer Drive: {e}")
     
     def get_file_metadata(self, file_id: str) -> Optional[Dict[str, Any]]:
@@ -162,10 +165,10 @@ class DriveService:
             return file
             
         except HttpError as e:
-            print(f"❌ Error obteniendo metadata: {e}")
+            logger.error(f"❌ Error obteniendo metadata: {e}")
             return None
         except Exception as e:
-            print(f"❌ Error inesperado: {e}")
+            logger.error(f"❌ Error inesperado obteniendo metadata: {e}")
             return None
     
     def download_file(self, file_id: str) -> Optional[bytes]:
@@ -186,17 +189,17 @@ class DriveService:
             request = self.service.files().get_media(fileId=file_id)
             file_content = request.execute()
             
-            print(f"✅ Archivo descargado: {len(file_content)} bytes")
+            logger.info(f"✅ Archivo descargado: {len(file_content)} bytes")
             return file_content
             
         except socket.timeout as e:
-            print(f"❌ Error descargando archivo (Timeout de 30s): {e}")
+            logger.error(f"❌ Error descargando archivo (Timeout de 30s): {e}")
             return None
         except HttpError as e:
-            print(f"❌ Error descargando archivo: {e}")
+            logger.error(f"❌ Error descargando archivo (HTTP): {e}")
             return None
         except Exception as e:
-            print(f"❌ Error inesperado: {e}")
+            logger.error(f"❌ Error inesperado descargando archivo: {e}")
             return None
     
     def search_files(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
@@ -224,14 +227,14 @@ class DriveService:
             ).execute()
             
             files = results.get('files', [])
-            print(f"✅ Encontrados {len(files)} archivos para '{query}'")
+            logger.info(f"✅ Encontrados {len(files)} archivos para '{query}'")
             return files
             
         except HttpError as e:
-            print(f"❌ Error buscando archivos: {e}")
+            logger.error(f"❌ Error buscando archivos: {e}")
             return []
         except Exception as e:
-            print(f"❌ Error inesperado: {e}")
+            logger.error(f"❌ Error inesperado buscando archivos: {e}")
             return []
 
 
@@ -248,14 +251,14 @@ class DriveService:
             request = local_service.files().get_media(fileId=file_id)
             file_content = request.execute()
             
-            print(f"✅ Archivo descargado (Thread-Safe): {len(file_content)} bytes")
+            logger.info(f"✅ Archivo descargado (Thread-Safe): {len(file_content)} bytes")
             return file_content
             
         except socket.timeout as e:
-            print(f"❌ Error descarga thread-safe (Timeout de 30s): {e}")
+            logger.error(f"❌ Error descarga thread-safe (Timeout de 30s): {e}")
             return None
         except Exception as e:
-            print(f"❌ Error descarga thread-safe: {e}")
+            logger.error(f"❌ Error descarga thread-safe: {e}")
             return None
 
     def register_webhook(self, folder_id: str, webhook_url: str, channel_id: str) -> Optional[Dict[str, Any]]:
@@ -277,14 +280,14 @@ class DriveService:
                 body=body
             ).execute()
             
-            print(f"✅ Webhook registrado para carpeta {folder_id}: {response}")
+            logger.info(f"✅ Webhook registrado para carpeta {folder_id}: {response}")
             return response
             
         except HttpError as e:
-            print(f"❌ Error registrando webhook: {e}")
+            logger.error(f"❌ Error registrando webhook: {e}")
             return None
         except Exception as e:
-            print(f"❌ Error inesperado registrando webhook: {e}")
+            logger.error(f"❌ Error inesperado registrando webhook: {e}")
             return None
 
 

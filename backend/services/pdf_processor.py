@@ -15,7 +15,7 @@ class PDFProcessor:
     def __init__(self):
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
-        self.model_name = "gemini-3.1-flash-lite-preview"
+        self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-3.1-flash-lite")
 
         try:
             # En Cloud Run o App Engine usa las credenciales por defecto de la aplicación (ADC)
@@ -147,8 +147,8 @@ class PDFProcessor:
             logger.error(f"Error guardando docente en BD: {e}")
             try:
                 db.rollback()
-            except:
-                pass
+            except Exception as rollback_err:
+                logger.error(f"Error en rollback: {rollback_err}")
             return None
 
 pdf_processor = PDFProcessor()

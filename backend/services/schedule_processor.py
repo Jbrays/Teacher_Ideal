@@ -33,7 +33,7 @@ class ScheduleProcessor:
         # Configuración de Vertex AI
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
-        self.model_name = "gemini-3.1-flash-lite-preview"
+        self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-3.1-flash-lite")
         
         try:
             vertexai.init(project=self.project_id, location=self.location)
@@ -107,7 +107,7 @@ class ScheduleProcessor:
                 total_pages = len(pdf.pages)
                 batch_size = 5 # Aumentado a 5 para reducir llamadas API
                 
-                print(f"📄 Total páginas: {total_pages} | Batch Size: {batch_size}")
+                logger.info(f"📄 Total páginas: {total_pages} | Batch Size: {batch_size}")
                 
                 for i in range(0, total_pages, batch_size):
                     # Construir lote
@@ -117,7 +117,7 @@ class ScheduleProcessor:
                         text = page.extract_text(layout=True) or ""
                         batch_text += f"\n--- PÁGINA {i + idx + 1} ---\n{text}\n"
                     
-                    print(f"   ⏳ Procesando Batch {i//batch_size + 1}/{(total_pages + batch_size - 1)//batch_size} (Págs {i+1}-{min(i+batch_size, total_pages)})...")
+                    logger.info(f"   ⏳ Procesando Batch {i//batch_size + 1}/{(total_pages + batch_size - 1)//batch_size} (Págs {i+1}-{min(i+batch_size, total_pages)})...")
                     
                     prompt = f"""
                     Analiza este TEXTO extraído de varias páginas de un horario universitario.
@@ -165,7 +165,7 @@ class ScheduleProcessor:
                                 if "asignaciones" in data: data = data["asignaciones"]
                                 else: data = [data]
                             
-                            print(f'Batch {i//batch_size + 1}: {len(data)} registros extraídos. Muestra: {data[:2]}')
+                            logger.debug(f'Batch {i//batch_size + 1}: {len(data)} registros extraídos. Muestra: {data[:2]}')
                                 
                             # Procesar y limpiar datos del lote
                             for d in data:
@@ -209,7 +209,7 @@ class ScheduleProcessor:
         OPTIMIZACIÓN: Carga todos los docentes y cursos en memoria una sola vez
         para evitar consultas repetitivas dentro del bucle.
         """
-        print(f'save_history_to_db recibió {len(data)} registros')
+        logger.info(f'save_history_to_db recibió {len(data)} registros')
         if not data:
             return 0
             
@@ -262,10 +262,10 @@ class ScheduleProcessor:
                 docente = None
                 if best_score >= 0.8:
                     docente = best_match
-                    print(f"✅ Match: Horario='{docente_nombre}' | BD='{docente.nombre}' | Score={best_score:.2f}")
+                    logger.info(f"✅ Match: Horario='{docente_nombre}' | BD='{docente.nombre}' | Score={best_score:.2f}")
                 else:
                     best_name = best_match.nombre if best_match else 'None'
-                    print(f"❌ No match: Horario='{docente_nombre}' | Best BD='{best_name}' | Score={best_score:.2f}")
+                    logger.warning(f"❌ No match: Horario='{docente_nombre}' | Best BD='{best_name}' | Score={best_score:.2f}")
 
                 if not docente:
                     continue

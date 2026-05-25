@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import sys
 
 class UserLogin(BaseModel):
     token: str
@@ -20,7 +21,7 @@ class AuthResponse(BaseModel):
 class SystemStatus(BaseModel):
     status: str
     version: str
-    python_version: str
+    python_version: Optional[str] = None
     features: List[str]
     firebase_connected: bool = False
     drive_connected: bool = False

@@ -19,7 +19,7 @@ class DOCXProcessor:
     def __init__(self):
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
-        self.model_name = "gemini-3.1-flash-lite-preview"
+        self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-3.1-flash-lite")
 
         try:
             vertexai.init(project=self.project_id, location=self.location)
@@ -158,8 +158,8 @@ class DOCXProcessor:
             logger.error(f"Error BD Curso: {e}")
             try:
                 db.rollback()
-            except:
-                pass
+            except Exception as rollback_err:
+                logger.error(f"Error en rollback: {rollback_err}")
             return None
 
 docx_processor = DOCXProcessor()

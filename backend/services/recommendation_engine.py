@@ -9,14 +9,16 @@ from backend.database import crud
 from backend.database.models import Curso, Docente
 from backend.services.explanation_model import ExplanationModel
 
-import torch
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Cargar modelo SBERT optimizado
 try:
     model = SentenceTransformer('BAAI/bge-m3')
     model.half()
 except Exception as e:
-    print(f"Error cargando SBERT: {e}")
+    logger.error(f"Error cargando SBERT: {e}")
     model = None
 
 class RecommendationEngine:
@@ -218,7 +220,7 @@ class RecommendationEngine:
 
         except Exception as e:
             import traceback
-            print(f"Error al generar recomendaciones para el curso {curso_id}: {e}")
+            logger.error(f"Error al generar recomendaciones para el curso {curso_id}: {e}")
             traceback.print_exc()
             return []
 

@@ -3,13 +3,15 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-# Configuración de la base de datos SQLite
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./docentes_system.db")
+# Configuración estricta para la nube (Neon PostgreSQL)
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("⚠️ ERROR CRÍTICO: La variable de entorno 'DATABASE_URL' no está configurada. El sistema solo puede ejecutarse en la nube con Neon PostgreSQL.")
 
 # Crear engine
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
     pool_pre_ping=True,
     pool_recycle=300
 )

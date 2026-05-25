@@ -3,14 +3,15 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 from sqlalchemy.orm import Session
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 from pathlib import Path
-from pathlib import Path
 import os
+import sys
 import asyncio
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 # --- 1. CONFIGURACIÓN INICIAL: CARGAR VARIABLES DE ENTORNO ---
 ROOT_DIR = Path(__file__).parent.parent
@@ -22,7 +23,7 @@ relative_cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
 if relative_cred_path:
     absolute_cred_path = str(ROOT_DIR / relative_cred_path)
     os.environ['FIREBASE_CREDENTIALS_PATH'] = absolute_cred_path
-    print(f"Ruta de credenciales de Firebase establecida en: {absolute_cred_path}")
+    logger.info(f"Ruta de credenciales de Firebase establecida en: {absolute_cred_path}")
 
 # --- 2. IMPORTS DE SERVICIOS ---
 from backend.auth.firebase import firebase_auth
@@ -42,7 +43,6 @@ from backend.database.db_session import engine, Base, SessionLocal
 import backend.database.models  # Importar explícitamente para asegurar que los modelos están registrados
 
 init_db()
-Base.metadata.create_all(bind=engine)
 
 # --- 3. CONFIGURACIÓN DE LA APP ---
 app = FastAPI(
@@ -51,19 +51,16 @@ app = FastAPI(
     version="1.0.0"
 )
 
+_default_origins = [
+    "https://semilleros-493300.web.app",
+    "https://semilleros-493300.firebaseapp.com",
+]
+_extra_origins = [
+    o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5500",
-        "http://127.0.0.1:5500",
-        "http://localhost:3000",
-        "http://localhost:8080",
-        "http://localhost:8000",
-        "https://semilleros-493300.web.app",
-        "https://semilleros-493300.firebaseapp.com",
-    ],
+    allow_origins=_default_origins + _extra_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -104,7 +101,8 @@ async def api_status(db: Session = Depends(get_db)):
         features=["Firebase Auth", "Drive Integration", "NER Processing", "SBERT Recommendations", "Schedule Analysis"],
         firebase_connected=firebase_auth.app is not None,
         drive_connected=drive_service.service is not None,
-        database_connected=db_ok
+        database_connected=db_ok,
+        python_version=sys.version
     )
 
 @app.post("/api/auth/verify", response_model=AuthResponse)
@@ -193,7 +191,7 @@ async def list_folder_files(folder_id: str, authorization: Optional[str] = Heade
             "files": files
         }
     except Exception as e:
-        print(f"Error listando archivos: {e}")
+        logger.error(f"Error listando archivos: {e}")
         raise HTTPException(status_code=500, detail=f"Error listando archivos: {str(e)}")
 
 from fastapi import Request, BackgroundTasks
@@ -210,7 +208,7 @@ def process_historical_queue(archivos: list, entidad_inferida: str, folder_id: s
     """
     access_token = folder_tokens.get(folder_id)
     if not access_token:
-        print(f"❌ Error: No se encontró access_token en memoria para el folder_id {folder_id}. Abortando.")
+        logger.error(f"❌ Error: No se encontró access_token en memoria para el folder_id {folder_id}. Abortando.")
         return
 
     for archivo in archivos:
@@ -218,7 +216,7 @@ def process_historical_queue(archivos: list, entidad_inferida: str, folder_id: s
         try:
             process_drive_file_async(archivo['id'], archivo_nombre, entidad_inferida, access_token)
         except Exception as e:
-            print(f"❌ Error fatal procesando archivo {archivo_nombre} en la cola histórica: {e}")
+            logger.error(f"❌ Error fatal procesando archivo {archivo_nombre} en la cola histórica: {e}")
         finally:
             time.sleep(3)  # Permite al Garbage Collector liberar memoria de pdfplumber
 
@@ -229,7 +227,7 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, a
     Abre y gestiona su propia sesión de base de datos.
     """
     if file_name == 'webhook_event' or drive_file_id == 'test_id':
-        print("Ignorando ping de prueba del webhook de Drive.")
+        logger.info("Ignorando ping de prueba del webhook de Drive.")
         return
         
     db = SessionLocal()
@@ -244,10 +242,10 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, a
             elif name_lower.endswith(".pdf"):
                 entidad = "docente"
             else:
-                print(f"⚠️ Formato no soportado o entidad no inferible para {file_name}")
+                logger.warning(f"⚠️ Formato no soportado o entidad no inferible para {file_name}")
                 return
 
-        print(f"🔄 Descargando y procesando {entidad}: {file_name}")
+        logger.info(f"🔄 Descargando y procesando {entidad}: {file_name}")
         
         # 2. Descarga
         with drive_download_lock:
@@ -258,33 +256,27 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, a
 
         # 3. Enrutamiento, Procesamiento IA y Persistencia
         if entidad == "docente":
-            from backend.services.pdf_processor import PDFProcessor
-            processor = PDFProcessor()
-            data = processor.extract_cv_info(file_bytes, file_name)
-            if data.get("success", False) or "name" in data:  # Dependiendo del output de extract_cv_info
-                processor.save_docente_to_db(db, data, drive_file_id)
+            data = pdf_processor.extract_cv_info(file_bytes, file_name)
+            if data.get("success", False) or "name" in data:
+                pdf_processor.save_docente_to_db(db, data, drive_file_id)
             else:
                 raise Exception(data.get("error", "Error desconocido en CV"))
 
         elif entidad == "curso":
-            from backend.services.docx_processor import DOCXProcessor
-            processor = DOCXProcessor()
-            data = processor.extract_syllabus_info(file_bytes, file_name)
+            data = docx_processor.extract_syllabus_info(file_bytes, file_name)
             if data.get("success", False) or "nombre" in data:
-                processor.save_curso_to_db(db, data, drive_file_id)
+                docx_processor.save_curso_to_db(db, data, drive_file_id)
             else:
                 raise Exception(data.get("error", "Error desconocido en Sílabo"))
 
         elif entidad == "horario":
-            from backend.services.schedule_processor import ScheduleProcessor
             temp_path = f"/tmp/{drive_file_id}.pdf"
             with open(temp_path, "wb") as f:
                 f.write(file_bytes)
             try:
-                processor = ScheduleProcessor()
-                data_list = processor.extract_schedule_data(temp_path)
+                data_list = schedule_processor.extract_schedule_data(temp_path)
                 if data_list:
-                    processor.save_history_to_db(db, data_list)
+                    schedule_processor.save_history_to_db(db, data_list)
                 else:
                     raise Exception("No se extrajeron datos válidos del horario.")
             finally:
@@ -293,11 +285,11 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, a
 
         # 4. Confirmación Transaccional
         db.commit()
-        print(f"✅ Procesamiento y guardado exitoso: {file_name}")
+        logger.info(f"✅ Procesamiento y guardado exitoso: {file_name}")
 
     except Exception as e:
         db.rollback()
-        print(f"❌ Error procesando {file_name}: {e}")
+        logger.error(f"❌ Error procesando {file_name}: {e}")
     finally:
         db.close()
 
@@ -358,7 +350,7 @@ async def drive_webhook(request: Request, background_tasks: BackgroundTasks, db:
     # (En la implementación real de Drive API, se tendría que consultar la API para ver qué cambió)
     try:
         body = await request.json()
-    except:
+    except Exception:
         body = {}
 
     drive_file_id = body.get("drive_file_id", "test_id")
@@ -385,7 +377,7 @@ async def drive_webhook(request: Request, background_tasks: BackgroundTasks, db:
     elif evento_tipo in ["add", "update"]:
         access_token = folder_tokens.get(channel_id)
         if not access_token:
-            print(f"❌ Error: No se encontró access_token en memoria para el channel_id {channel_id}. Ignorando.")
+            logger.error(f"❌ Error: No se encontró access_token en memoria para el channel_id {channel_id}. Ignorando.")
             return {"status": "error", "message": "No access_token found"}
 
         # Tarea delegada a la misma función global asíncrona real
@@ -413,10 +405,7 @@ async def get_docentes(skip: int = 0, limit: int = 100, db: Session = Depends(ge
                 "nombre": d.nombre, 
                 "email": d.email, 
                 "grado": d.grado, 
-                "areas": d.areas, 
-                "herramientas": d.herramientas, 
-                "lenguajes": d.lenguajes,
-                "metodologias": d.metodologias
+                "entidades_clave": d.entidades_clave
             } for d in docentes
         ]
     }
@@ -438,10 +427,7 @@ async def get_cursos(ciclo: Optional[int] = None, db: Session = Depends(get_db),
                 "nombre": c.nombre, 
                 "codigo": c.codigo, 
                 "ciclo": c.ciclo, 
-                "areas": c.areas, 
-                "lenguajes": c.lenguajes, 
-                "herramientas": c.herramientas, 
-                "metodologias": c.metodologias
+                "entidades_clave": c.entidades_clave
             } for c in cursos
         ]
     }
@@ -454,7 +440,7 @@ async def recommend_docentes(curso_id: int, top_k: int = 100, user: dict = Depen
         if not curso:
             raise HTTPException(status_code=404, detail=f"Curso con ID {curso_id} no encontrado")
         
-        print(f"🎯 Generando recomendaciones de docentes para curso: {curso.nombre}")
+        logger.info(f"🎯 Generando recomendaciones de docentes para curso: {curso.nombre}")
         
         # Llamada al motor de recomendación (SBERT + Historial)
         recommendations = recommendation_engine.recommend_docentes_for_curso(db=db, curso_id=curso_id, top_k=top_k)
@@ -469,17 +455,15 @@ async def recommend_docentes(curso_id: int, top_k: int = 100, user: dict = Depen
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f"❌ Error generando recomendaciones de docentes: {e}")
+        logger.error(f"❌ Error generando recomendaciones de docentes: {e}")
         raise HTTPException(status_code=500, detail=f"Error generando recomendaciones: {str(e)}")
 
 # --- 9. ENDPOINTS DE DEBUG ELIMINADOS ---
 # Los endpoints /api/debug/ner-profile fueron removidos debido a la adopción del LLM Unificado (Gemini)
 # que reemplaza la extracción basada en diccionarios NER.
 
-# --- EJECUCIÓN LOCAL O CLOUD RUN ---
 if __name__ == "__main__":
     import uvicorn
-    # Cloud Run inyecta la variable de entorno PORT, por defecto usamos 8080 si no existe
     port = int(os.environ.get("PORT", 8080))
-    print(f"🚀 Servidor iniciando en http://0.0.0.0:{port} ...")
+    logger.info(f"🚀 Servidor iniciando en http://0.0.0.0:{port} ...")
     uvicorn.run("backend.main:app", host="0.0.0.0", port=port)
