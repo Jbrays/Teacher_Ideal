@@ -101,3 +101,26 @@ export async function configWebhook(folderId, googleToken) {
     throw error;
   }
 }
+
+/**
+ * Eliminar un docente permanentemente (Derecho al olvido)
+ */
+export async function deleteDocente(docenteId) {
+  try {
+    const response = await fetch(apiURL(`/api/docentes/${docenteId}`), {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Error ${response.status}: ${errorData.detail || response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error(`Error eliminando docente ${docenteId}:`, error);
+    throw error;
+  }
+}

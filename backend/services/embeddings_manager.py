@@ -2,7 +2,10 @@ import os
 import pickle
 import numpy as np
 import hashlib
+import logging
 from typing import Dict, Optional, Callable, List
+
+logger = logging.getLogger(__name__)
 from pathlib import Path
 from sqlalchemy.orm import Session
 from backend.database.models import Docente, Curso
@@ -77,6 +80,15 @@ class EmbeddingsManager:
             except Exception:
                 db.rollback()
         return embeddings_map
+
+    def delete_docente_embedding(self, docente_id: int):
+        path = self.docentes_dir / f"docente_{docente_id}.pkl"
+        if path.exists():
+            try:
+                os.remove(path)
+                logger.info(f"Vector semántico del docente {docente_id} destruido exitosamente.")
+            except Exception as e:
+                logger.error(f"Error destruyendo vector del docente {docente_id}: {e}")
 
     def clear_cache(self, item_type: str = "all") -> int:
         count = 0

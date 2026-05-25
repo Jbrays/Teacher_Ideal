@@ -68,6 +68,15 @@
               </p>
             </div>
 
+            <!-- Botón de purga (Derecho al olvido) -->
+            <button 
+              @click="handleDelete(docente)" 
+              class="mr-4 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition text-xs font-semibold flex items-center gap-1 shadow-sm border border-red-100"
+              title="Derecho al Olvido: Purgar perfil y vectores"
+            >
+              🗑️ Purgar
+            </button>
+
             <!-- Score circle -->
             <div class="relative flex items-center justify-center">
               <div
@@ -170,6 +179,7 @@
 import { useAppStore } from "../store/app";
 import { useRouter, useRoute } from "vue-router";
 import { computed, onMounted, ref } from "vue";
+import { deleteDocente } from "../services/api";
 
 export default {
   name: "RecommendationsView",
@@ -235,6 +245,23 @@ export default {
       }
     };
 
+    const handleDelete = async (docente) => {
+      const confirmed = confirm(
+        `¿Estás seguro de que deseas PURGAR permanentemente los datos y vectores IA de ${docente.nombre}?\n\nEsta acción es irreversible y ejecutará el "Derecho al Olvido".`
+      );
+      if (!confirmed) return;
+
+      try {
+        await deleteDocente(docente.docente_id);
+        // Filtrar del store localmente
+        store.recommendations = store.recommendations.filter(r => r.docente_id !== docente.docente_id);
+        store.saveState();
+        alert("Datos y vectores del docente purgados correctamente del servidor.");
+      } catch (error) {
+        alert("Error al purgar los datos: " + error.message);
+      }
+    };
+
     return {
       cursoNombre: computed(() => store.currentCursoNombre),
       recommendations: computed(() => store.recommendations),
@@ -243,6 +270,7 @@ export default {
       rankColor,
       circleStyle,
       goBack,
+      handleDelete,
       getSortedShapValues: (shapExplanations) => {
         if (!shapExplanations || typeof shapExplanations !== 'object') return {};
         

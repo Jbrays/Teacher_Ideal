@@ -365,6 +365,7 @@ async def drive_webhook(request: Request, background_tasks: BackgroundTasks, db:
         if entidad == "docente":
             docente = crud.get_docente_by_drive_id(db, drive_file_id)
             if docente:
+                embeddings_manager.delete_docente_embedding(docente.id)
                 crud.delete_docente(db, docente.id) # Esto borra historial y caché en cascada
         elif entidad == "curso":
             curso = crud.get_curso_by_drive_id(db, drive_file_id)
@@ -409,6 +410,29 @@ async def get_docentes(skip: int = 0, limit: int = 100, db: Session = Depends(ge
             } for d in docentes
         ]
     }
+
+@app.delete("/api/docentes/{docente_id}")
+async def delete_docente_endpoint(docente_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    try:
+        docente = crud.get_docente_by_id(db, docente_id)
+        if not docente:
+            raise HTTPException(status_code=404, detail=f"Docente con ID {docente_id} no encontrado")
+        
+        # 1. Purgar huella semántica (Derecho al olvido)
+        embeddings_manager.delete_docente_embedding(docente.id)
+        
+        # 2. Eliminar de Base de Datos
+        success = crud.delete_docente(db, docente.id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Error eliminando docente de la base de datos")
+            
+        logger.info(f"🗑️ Docente {docente.nombre} (ID: {docente.id}) eliminado exitosamente (Perfil y Vectores).")
+        return {"success": True, "message": "Docente eliminado correctamente"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error en endpoint delete_docente: {e}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 @app.get("/api/ciclos")
 async def get_ciclos(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
