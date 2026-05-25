@@ -41,9 +41,7 @@ class ExplanationModel:
         
         # Asegurarse de que todas las columnas de características esperadas existan
         expected_features = [
-            'area_match_count', 'lenguaje_match_count', 'herramienta_match_count',
-            'metodologia_match_count', 'contenido_match_count', 'history_score',
-            'semantic_score' # ADDED
+            'entidades_match_count', 'history_score', 'semantic_score'
         ]
         for col in expected_features:
             if col not in df.columns:
