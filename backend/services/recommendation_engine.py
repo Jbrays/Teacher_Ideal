@@ -25,7 +25,8 @@ def get_sbert_model():
     if _sbert_model is None:
         logger.info("Cargando modelo SBERT BAAI/bge-m3 a memoria por primera vez...")
         try:
-            _sbert_model = SentenceTransformer('BAAI/bge-m3')
+            # Forzar carga puramente offline. Si el archivo no está en caché, lanzará error en vez de hacer petición de red.
+            _sbert_model = SentenceTransformer('BAAI/bge-m3', local_files_only=True)
             _sbert_model.half()
             logger.info("Modelo SBERT cargado exitosamente.")
         except Exception as e:
