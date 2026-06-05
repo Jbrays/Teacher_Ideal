@@ -54,6 +54,8 @@ app = FastAPI(
 _default_origins = [
     "https://semilleros-493300.web.app",
     "https://semilleros-493300.firebaseapp.com",
+    "https://vektora.web.app",
+    "https://vektora.firebaseapp.com",
 ]
 _extra_origins = [
     o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()
