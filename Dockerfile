@@ -27,6 +27,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-m3')" && \
     chmod -R 777 /app/.cache
 
+# ¡CRÍTICO! Apagar el internet a nivel de sistema para toda la librería HuggingFace
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
+
 # Copiamos todo el código fuente del backend al contenedor
 COPY backend/ ./backend/
 
