@@ -63,23 +63,24 @@ class DOCXProcessor:
             return {}
 
         prompt = f"""
-        Actúa como un analista académico. Tienes el texto crudo de un Sílabo universitario.
-        Extrae la información clave en un JSON estricto.
-
-        Formato requerido:
+        Actúa como un analista académico. Extrae los requerimientos técnicos del Sílabo en un JSON estricto.
+        
+        REGLAS DE EXTRACCIÓN CRÍTICAS:
+        - 'entidades_clave' y 'competencias_tecnicas': Extrae ÚNICAMENTE los conocimientos, herramientas y habilidades que el curso exige al docente.
+        - PROHIBICIÓN ESTRICTA: No extraigas nombres de la universidad, códigos de oficina, nombres de decanos o términos administrativos. Ignora cualquier mención a la "UPAO" o entidades institucionales; el match debe ser sobre la MATERIA del curso, no sobre la INSTITUCIÓN.
+        - Si no hay requerimientos explícitos, escribe "[Información No Declarada]".
+        
+        Formato JSON:
         {{
-            "nombre": "string (Nombre de la asignatura)",
+            "nombre": "string",
             "codigo": "string",
-            "ciclo": 1 (entero),
-            "descripcion": "string (Texto de la SUMILLA)",
+            "ciclo": 1,
+            "descripcion": "string",
             "entidades_clave": ["string", "string"],
-            "competencias_tecnicas": "string o [Información No Declarada]",
-            "experiencia_docente": "string o [Información No Declarada]",
-            "formacion_academica": "string o [Información No Declarada]"
+            "competencias_tecnicas": "string",
+            "experiencia_docente": "string",
+            "formacion_academica": "string"
         }}
-        IMPORTANTE: 
-        - En lugar de un perfil sintético libre, extrae los requerimientos del curso en las categorías indicadas.
-        - Si el sílabo no especifica requerimientos explícitos para una categoría, DEBES escribir exactamente la cadena "[Información No Declarada]".
 
         Texto:
         {raw_text[:7000]}

@@ -41,19 +41,22 @@ class PDFProcessor:
             return {}
 
         prompt = """
-        Analiza este PDF (Curriculum Vitae) y devuelve un JSON estricto con el siguiente formato.
-        IMPORTANTE: 
-        - 'nombre' debe ser EXCLUSIVAMENTE el nombre completo de la persona (el profesor o candidato). NUNCA extraigas nombres de universidades, empresas o instituciones en este campo.
-        - En lugar de un resumen libre, extrae la información en las categorías fijas indicadas abajo.
-        - Si no encuentras información para alguna de las categorías de texto, DEBES escribir exactamente la cadena "[Información No Declarada]". No lo dejes vacío ni inventes datos.
-        - 'entidades_clave' debe ser una lista de strings con tecnologías, metodologías o áreas de conocimiento detectadas.
+        Analiza este PDF (Curriculum Vitae) y devuelve un JSON estricto.
+        
+        REGLAS DE EXTRACCIÓN CRÍTICAS:
+        - 'nombre': EXCLUSIVAMENTE el nombre de la persona.
+        - 'competencias_tecnicas' y 'entidades_clave': Extrae ÚNICAMENTE tecnologías, lenguajes de programación, metodologías, frameworks o conocimientos disciplinares específicos. 
+        - PROHIBICIÓN ESTRICTA: No incluyas nombres de universidades, centros de estudio, empresas, direcciones, ciudades o términos administrativos (ej. "UPAO", "Diplomado", "Grado") en los campos de competencias o entidades. Estos datos van únicamente en 'formacion_academica'.
+        - Si no hay información, escribe "[Información No Declarada]".
+        
+        Formato JSON:
         {
             "nombre": "string",
             "email": "string",
             "grado": "string",
-            "competencias_tecnicas": "string o [Información No Declarada]",
-            "experiencia_docente": "string o [Información No Declarada]",
-            "formacion_academica": "string o [Información No Declarada]",
+            "competencias_tecnicas": "string",
+            "experiencia_docente": "string",
+            "formacion_academica": "string",
             "entidades_clave": ["string", "string"]
         }
         """

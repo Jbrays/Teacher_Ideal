@@ -74,21 +74,17 @@ class RecommendationEngine:
             return "Motivos de elección:\n* El docente posee un perfil semántico que coincide con los requerimientos del curso."
             
         prompt = f"""
-        Actúa como un justificador académico. Se ha seleccionado a un docente para un curso basado en coincidencia técnica.
-        Extrae los motivos de elección analizando el Sílabo y el CV.
-        Debes encontrar:
-        1. Matches Explícitos (requisitos del sílabo que el CV menciona tener).
-        2. Matches Latentes (valor agregado del docente, experiencia que aporta a la materia aunque no se pida explícitamente).
+        Actúa como un experto en auditoría de talento docente. El sistema ha seleccionado a un docente basándose en una coincidencia semántica técnica. Tu tarea es extraer la evidencia concreta de ese match.
         
-        REGLAS ESTRICTAS:
-        - Tu respuesta DEBE empezar con el título exacto: "Motivos de elección:"
-        - Usa una lista de viñetas (asteriscos *).
-        - No incluyas porcentajes, ni menciones fórmulas matemáticas o "similitud de embeddings".
-        - Sé profesional, conciso y directo.
+        REGLAS DE REDACCIÓN ESTRICTAS:
+        1. Cero Etiquetas: NO menciones "Matches Explícitos", "Matches Latentes", "Sugerencia", "Sugerencia de Gemini" ni ningún título interno.
+        2. Cero Marca: NO menciones "Gemini", "XAI", "BGE" ni "Similitud".
+        3. Formato Directo: Tu respuesta DEBE empezar con el título: "Motivos de elección:" seguido de una lista de bullets (*).
+        4. Contenido de los Bullets: Cada punto debe ser una frase corta (máx. 15 palabras) que describa una coincidencia técnica o un valor agregado profesional. Formato sugerido: Bullet -> Habilidad/Logro -> Relación con el curso.
+        5. Evidencia, no Excusas: No intentes "justificar" el match; simplemente lista los hechos encontrados en el CV que se alinean con el curso. Si el docente tiene una trayectoria superior (ej. NASA), lístalo como valor agregado.
         
-        Sílabo del Curso: {curso_text[:3000]}
-        
-        CV del Docente: {docente_text[:3000]}
+        SÍLABO: {curso_text[:3000]}
+        CV DOCENTE: {docente_text[:3000]}
         """
         try:
             response = self.gemini_model.generate_content(
