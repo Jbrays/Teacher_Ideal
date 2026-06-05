@@ -7,6 +7,7 @@ WORKDIR /app
 # Variables de entorno para optimizar Python en Docker
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV HF_HOME=/app/.cache/huggingface
 
 # Instalamos dependencias del sistema operativo que podrían necesitar algunas librerías
 # como PyPDF2, pdfplumber o las dependencias de machine learning.
