@@ -8,6 +8,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/app/.cache/huggingface
+ENV SENTENCE_TRANSFORMERS_HOME=/app/.cache/sbert
 
 # Instalamos dependencias del sistema operativo que podrían necesitar algunas librerías
 # como PyPDF2, pdfplumber o las dependencias de machine learning.
@@ -23,7 +24,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Pre-descargamos el modelo SBERT para que quede "horneado" en la imagen de Docker
 # Esto evita descargar 2.2 GB en cada inicio del contenedor, previniendo fallos en Cloud Run
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-m3')"
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-m3')" && \
+    chmod -R 777 /app/.cache
 
 # Copiamos todo el código fuente del backend al contenedor
 COPY backend/ ./backend/

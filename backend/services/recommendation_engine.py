@@ -15,6 +15,8 @@ import os
 logger = logging.getLogger(__name__)
 
 # Forzar a HuggingFace a usar SOLO el modelo pre-horneado en Docker
+os.environ["HF_HOME"] = "/app/.cache/huggingface"
+os.environ["SENTENCE_TRANSFORMERS_HOME"] = "/app/.cache/sbert"
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
