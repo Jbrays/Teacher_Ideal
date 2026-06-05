@@ -56,6 +56,13 @@ class RecommendationEngine:
         entidades = ", ".join(docente.entidades_clave) if docente.entidades_clave else ""
         return f"{perfil} Habilidades y experiencia técnica: {entidades}"
 
+    def _calculate_ner_evidencias(self, curso: Curso, docente: Docente) -> Dict:
+        curso_entidades = set(curso.entidades_clave) if curso.entidades_clave else set()
+        docente_entidades = set(docente.entidades_clave) if docente.entidades_clave else set()
+        return {
+            "entidades_clave": list(curso_entidades.intersection(docente_entidades))
+        }
+
     def get_embedding_for_text(self, text: str) -> np.ndarray:
         model = get_sbert_model()
         if not model:
@@ -125,6 +132,7 @@ class RecommendationEngine:
                             'score_semantico': round(cache_entry.score_semantico * 100, 2),
                             'score_relativo': round(cache_entry.score_combinado * 100, 2), # Se recalcula luego
                             'confianza_etiqueta': cache_entry.version_algoritmo, # Reciclado
+                            'evidencias': cache_entry.evidencias if cache_entry.evidencias else {'entidades_clave': []},
                             'xai_explanations': cache_entry.shap_explanations.get('text', ''),
                             'from_cache': True
                         })
@@ -220,13 +228,16 @@ class RecommendationEngine:
                 
                 combined_score = (s_bge * W_SEM) + (s_hist * p_sat * W_HIST)
                 
+                evidencias = self._calculate_ner_evidencias(curso, docente)
+                
                 final_scores.append({
                     'docente_id': docente.id,
                     'docente_obj': docente,
                     'score_combinado': combined_score,
                     'score_historico': s_hist,
                     'score_semantico': s_bge,
-                    'p_sat': p_sat
+                    'p_sat': p_sat,
+                    'evidencias': evidencias
                 })
 
             # 6. Ordenar por Score Final
@@ -273,6 +284,7 @@ class RecommendationEngine:
                     'score_semantico': round(result['score_semantico'] * 100, 2),
                     'score_relativo': round(score_rel * 100, 2),
                     'confianza_etiqueta': conf_tag,
+                    'evidencias': result['evidencias'],
                     'xai_explanations': xai_text,
                     'from_cache': False
                 }
