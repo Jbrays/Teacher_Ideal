@@ -94,76 +94,31 @@
           <!-- Divider -->
           <div class="w-full h-px bg-gray-200 my-4"></div>
 
-          <!-- Explicaciones SHAP -->
-          <div v-if="docente.shap_explanations && Object.keys(docente.shap_explanations).length > 0" 
-               class="mb-4 p-4 bg-blue-50 rounded-lg">
-            <h4 class="text-sm font-semibold text-gray-700 mb-3">
-              🔍 ¿Por qué esta recomendación?
+          <!-- Explicaciones XAI (Gemini) -->
+          <div v-if="docente.xai_explanations" 
+               class="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+            <h4 class="text-sm font-semibold text-indigo-700 mb-3 flex items-center gap-2">
+              <span>🧠 Análisis de Inteligencia Artificial (Gemini XAI)</span>
             </h4>
-            <div class="space-y-2">
-              <div v-for="(value, feature) in getSortedShapValues(docente.shap_explanations)" 
-                   :key="feature"
-                   class="flex items-center gap-2">
-                <span class="text-xs text-gray-600 w-32 flex-shrink-0">{{ formatFeatureName(feature) }}</span>
-                <div class="flex-grow bg-gray-200 rounded-full h-4 overflow-hidden">
-                  <div 
-                    class="h-full rounded-full transition-all"
-                    :class="value > 0 ? 'bg-green-500' : 'bg-red-500'"
-                    :style="{ width: `${Math.min(Math.abs(value) * 100, 100)}%` }">
-                  </div>
-                </div>
-                <span class="text-xs font-mono text-gray-700 w-16 text-right">
-                  {{ value > 0 ? '+' : '' }}{{ value.toFixed(3) }}
-                </span>
-              </div>
+            <div class="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+              {{ docente.xai_explanations }}
             </div>
           </div>
 
-          <!-- Detalles -->
-          <div class="space-y-3 text-sm">
-
-            <!-- Areas -->
-            <div v-if="docente.evidencias.areas?.length">
-              <p class="font-medium text-gray-700 mb-1">Áreas coincidentes:</p>
+          <!-- Detalles de Entidades (Extracción dura) -->
+          <div class="space-y-3 text-sm mt-4">
+            <div v-if="docente.evidencias?.entidades_clave?.length">
+              <p class="font-medium text-gray-700 mb-2">Tecnologías y conceptos en común con el sílabo:</p>
               <div class="flex flex-wrap gap-2">
                 <span
-                  v-for="a in docente.evidencias.areas"
-                  :key="a"
-                  class="px-3 py-1 rounded-full text-white bg-indigo-500 text-xs font-medium"
+                  v-for="e in docente.evidencias.entidades_clave"
+                  :key="e"
+                  class="px-3 py-1 rounded-full text-white bg-indigo-500 text-xs font-medium shadow-sm"
                 >
-                  {{ a }}
+                  {{ e }}
                 </span>
               </div>
             </div>
-
-            <!-- Lenguajes -->
-            <div v-if="docente.evidencias.lenguajes?.length">
-              <p class="font-medium text-gray-700 mb-1">Lenguajes:</p>
-              <div class="flex flex-wrap gap-2">
-                <span
-                  v-for="l in docente.evidencias.lenguajes"
-                  :key="l"
-                  class="px-3 py-1 rounded-full text-white bg-cyan-500 text-xs font-medium"
-                >
-                  {{ l }}
-                </span>
-              </div>
-            </div>
-
-            <!-- Herramientas -->
-            <div v-if="docente.evidencias.herramientas?.length">
-              <p class="font-medium text-gray-700 mb-1">Herramientas:</p>
-              <div class="flex flex-wrap gap-2">
-                <span
-                  v-for="h in docente.evidencias.herramientas"
-                  :key="h"
-                  class="px-3 py-1 rounded-full text-white bg-pink-500 text-xs font-medium"
-                >
-                  {{ h }}
-                </span>
-              </div>
-            </div>
-
           </div>
 
         </div>
