@@ -1,64 +1,76 @@
 import os
-import pickle
-import numpy as np
-import hashlib
+import chromadb
 import logging
 from typing import Dict, Optional, Callable, List
-
-logger = logging.getLogger(__name__)
 from pathlib import Path
+import numpy as np
 from sqlalchemy.orm import Session
 from backend.database.models import Docente, Curso
+import hashlib
 
-BASE_DIR = Path("backend/data/embeddings")
-DOCENTES_DIR = BASE_DIR / "docentes"
-CURSOS_DIR = BASE_DIR / "cursos"
-DOCENTES_DIR.mkdir(parents=True, exist_ok=True)
-CURSOS_DIR.mkdir(parents=True, exist_ok=True)
+logger = logging.getLogger(__name__)
 
+# Configuración de ChromaDB
+BASE_DIR = Path("backend/data/chroma_db")
+BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 class EmbeddingsManager:
     def __init__(self):
-        self.docentes_dir = DOCENTES_DIR
-        self.cursos_dir = CURSOS_DIR
+        try:
+            self.client = chromadb.PersistentClient(path=str(BASE_DIR))
+            # Usar distancia Coseno en la base de datos
+            self.docentes_collection = self.client.get_or_create_collection(name="docentes", metadata={"hnsw:space": "cosine"})
+            self.cursos_collection = self.client.get_or_create_collection(name="cursos", metadata={"hnsw:space": "cosine"})
+        except Exception as e:
+            logger.error(f"Error inicializando ChromaDB: {e}")
+            self.client = None
 
     def _generate_hash(self, text: str) -> str:
         return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
-    def _get_item_path(self, db_item: (Docente | Curso)) -> Path:
-        if isinstance(db_item, Docente):
-            return self.docentes_dir / f"docente_{db_item.id}.pkl"
-        elif isinstance(db_item, Curso):
-            return self.cursos_dir / f"curso_{db_item.id}.pkl"
-        else:
-            raise TypeError("El item debe ser un objeto Docente o Curso")
-
-    def _load_embedding(self, path: Path) -> Optional[Dict]:
-        if not path.exists():
-            return None
-        try:
-            with open(path, 'rb') as f:
-                return pickle.load(f)
-        except Exception:
-            return None
-
-    def _save_embedding(self, path: Path, data: Dict):
-        try:
-            with open(path, 'wb') as f:
-                pickle.dump(data, f)
-        except Exception:
-            pass
-
     def get_or_create_embedding(self, db_item: (Docente | Curso), text_generator: Callable, embedding_generator: Callable) -> np.ndarray:
-        path = self._get_item_path(db_item)
-        cached_data = self._load_embedding(path)
+        if not self.client:
+            raise Exception("ChromaDB no está inicializado")
+            
+        is_docente = isinstance(db_item, Docente)
+        collection = self.docentes_collection if is_docente else self.cursos_collection
+        item_id = f"docente_{db_item.id}" if is_docente else f"curso_{db_item.id}"
+        
         current_text = text_generator(db_item)
         current_hash = self._generate_hash(current_text)
-        if cached_data and cached_data.get('hash') == current_hash:
-            return cached_data.get('vector')
+        
+        # Intentar obtener de ChromaDB
+        try:
+            result = collection.get(ids=[item_id], include=["embeddings", "metadatas"])
+            if result and result["metadatas"] and len(result["metadatas"]) > 0:
+                cached_hash = result["metadatas"][0].get("hash")
+                if cached_hash == current_hash and result["embeddings"] and len(result["embeddings"]) > 0:
+                    # Devolver como numpy array 2D para ser compatible con la API existente
+                    vector = np.array(result["embeddings"][0])
+                    if vector.ndim == 1:
+                        vector = vector.reshape(1, -1)
+                    return vector
+        except Exception as e:
+            logger.error(f"Error consultando ChromaDB para {item_id}: {e}")
+
+        # Si no existe o el hash cambió, generar nuevo embedding
         new_vector = embedding_generator(current_text)
-        new_data = {'vector': new_vector, 'hash': current_hash, 'text_preview': current_text[:150]}
-        self._save_embedding(path, new_data)
+        
+        # Aplanar el vector para ChromaDB si es 2D (SBERT devuelve 2D)
+        flat_vector = new_vector.flatten().tolist()
+        
+        # Guardar en ChromaDB
+        try:
+            # Upsert inserta o actualiza
+            collection.upsert(
+                ids=[item_id],
+                embeddings=[flat_vector],
+                metadatas=[{"hash": current_hash, "text_preview": current_text[:100]}],
+                documents=[current_text]
+            )
+        except Exception as e:
+            logger.error(f"Error guardando en ChromaDB para {item_id}: {e}")
+            
         db_item.embedding_hash = current_hash
         return new_vector
 
@@ -66,14 +78,18 @@ class EmbeddingsManager:
         embeddings_map = {}
         needs_commit = False
         for docente in docentes:
-            vector = self.get_or_create_embedding(
-                db_item=docente,
-                text_generator=text_generator,
-                embedding_generator=embedding_generator
-            )
-            embeddings_map[docente.id] = vector
-            if not docente.embedding_hash:
-                needs_commit = True
+            try:
+                vector = self.get_or_create_embedding(
+                    db_item=docente,
+                    text_generator=text_generator,
+                    embedding_generator=embedding_generator
+                )
+                embeddings_map[docente.id] = vector
+                if not docente.embedding_hash:
+                    needs_commit = True
+            except Exception as e:
+                logger.error(f"Error generando embedding para docente {docente.id}: {e}")
+                
         if needs_commit:
             try:
                 db.commit()
@@ -82,25 +98,28 @@ class EmbeddingsManager:
         return embeddings_map
 
     def delete_docente_embedding(self, docente_id: int):
-        path = self.docentes_dir / f"docente_{docente_id}.pkl"
-        if path.exists():
-            try:
-                os.remove(path)
-                logger.info(f"Vector semántico del docente {docente_id} destruido exitosamente.")
-            except Exception as e:
-                logger.error(f"Error destruyendo vector del docente {docente_id}: {e}")
+        if not self.client:
+            return
+        try:
+            self.docentes_collection.delete(ids=[f"docente_{docente_id}"])
+            logger.info(f"Vector semántico del docente {docente_id} destruido exitosamente de ChromaDB.")
+        except Exception as e:
+            logger.error(f"Error destruyendo vector del docente {docente_id}: {e}")
 
     def clear_cache(self, item_type: str = "all") -> int:
         count = 0
-        if item_type in ["all", "docentes"]:
-            for f in self.docentes_dir.glob("*.pkl"):
-                os.remove(f)
+        try:
+            if item_type in ["all", "docentes"] and self.client:
+                # Una forma simple es borrar y recrear
+                self.client.delete_collection("docentes")
+                self.docentes_collection = self.client.get_or_create_collection(name="docentes", metadata={"hnsw:space": "cosine"})
                 count += 1
-        if item_type in ["all", "cursos"]:
-            for f in self.cursos_dir.glob("*.pkl"):
-                os.remove(f)
+            if item_type in ["all", "cursos"] and self.client:
+                self.client.delete_collection("cursos")
+                self.cursos_collection = self.client.get_or_create_collection(name="cursos", metadata={"hnsw:space": "cosine"})
                 count += 1
+        except Exception as e:
+            logger.error(f"Error limpiando colecciones: {e}")
         return count
-
 
 embeddings_manager = EmbeddingsManager()

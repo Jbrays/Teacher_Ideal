@@ -2,12 +2,12 @@ from typing import List, Dict
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-import pandas as pd
+import vertexai
+from vertexai.generative_models import GenerativeModel
 from sqlalchemy.orm import Session
 from backend.services.embeddings_manager import embeddings_manager
 from backend.database import crud
 from backend.database.models import Curso, Docente
-from backend.services.explanation_model import ExplanationModel
 
 import logging
 import os
@@ -15,7 +15,6 @@ import os
 logger = logging.getLogger(__name__)
 
 # Forzar a HuggingFace a usar SOLO el modelo pre-horneado en Docker
-# Evita el error "429 Too Many Requests" en Cloud Run
 os.environ["HF_HUB_OFFLINE"] = "1"
 
 # Variable global para lazy loading
@@ -24,7 +23,7 @@ _sbert_model = None
 def get_sbert_model():
     global _sbert_model
     if _sbert_model is None:
-        logger.info("Cargando modelo SBERT BAAI/bge-m3 a memoria por primera vez (esto puede tardar)...")
+        logger.info("Cargando modelo SBERT BAAI/bge-m3 a memoria por primera vez...")
         try:
             _sbert_model = SentenceTransformer('BAAI/bge-m3')
             _sbert_model.half()
@@ -33,9 +32,18 @@ def get_sbert_model():
             logger.error(f"Error cargando SBERT: {e}")
     return _sbert_model
 
+
 class RecommendationEngine:
     def __init__(self):
-        self.explanation_model = ExplanationModel()
+        self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
+        self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-3.1-flash-lite")
+        try:
+            vertexai.init(project=self.project_id, location=self.location)
+            self.gemini_model = GenerativeModel(self.model_name)
+        except Exception as e:
+            logger.error(f"Error iniciando Vertex AI para NLG: {e}")
+            self.gemini_model = None
 
     def create_curso_text(self, curso: Curso) -> str:
         nombre_curso = f"Curso: {curso.nombre}. " * 3
@@ -48,35 +56,58 @@ class RecommendationEngine:
         entidades = ", ".join(docente.entidades_clave) if docente.entidades_clave else ""
         return f"{perfil} Habilidades y experiencia técnica: {entidades}"
 
-    def _calculate_ner_evidencias(self, curso: Curso, docente: Docente) -> Dict:
-        curso_entidades = set(curso.entidades_clave) if curso.entidades_clave else set()
-        docente_entidades = set(docente.entidades_clave) if docente.entidades_clave else set()
-        return {
-            "entidades_clave": list(curso_entidades.intersection(docente_entidades))
-        }
-
     def get_embedding_for_text(self, text: str) -> np.ndarray:
         model = get_sbert_model()
         if not model:
             raise Exception("Modelo SBERT no cargado")
         return model.encode([text], convert_to_numpy=True)[0].reshape(1, -1)
 
+    def _generate_nlg_explanation(self, curso_text: str, docente_text: str) -> str:
+        if not self.gemini_model:
+            return "Motivos de elección:\n* El docente posee un perfil semántico que coincide con los requerimientos del curso."
+            
+        prompt = f"""
+        Actúa como un justificador académico. Se ha seleccionado a un docente para un curso basado en coincidencia técnica.
+        Extrae los motivos de elección analizando el Sílabo y el CV.
+        Debes encontrar:
+        1. Matches Explícitos (requisitos del sílabo que el CV menciona tener).
+        2. Matches Latentes (valor agregado del docente, experiencia que aporta a la materia aunque no se pida explícitamente).
+        
+        REGLAS ESTRICTAS:
+        - Tu respuesta DEBE empezar con el título exacto: "Motivos de elección:"
+        - Usa una lista de viñetas (asteriscos *).
+        - No incluyas porcentajes, ni menciones fórmulas matemáticas o "similitud de embeddings".
+        - Sé profesional, conciso y directo.
+        
+        Sílabo del Curso: {curso_text[:3000]}
+        
+        CV del Docente: {docente_text[:3000]}
+        """
+        try:
+            response = self.gemini_model.generate_content(
+                prompt,
+                generation_config={"temperature": 0.2, "max_output_tokens": 512}
+            )
+            text = response.text.strip()
+            if not text.startswith("Motivos"):
+                text = "Motivos de elección:\n" + text
+            return text
+        except Exception as e:
+            logger.error(f"Error generando explicación NLG: {e}")
+            return "Motivos de elección:\n* Perfil técnico alineado con las competencias de la materia."
+
     def recommend_docentes_for_curso(
         self,
         db: Session,
         curso_id: int,
-        top_k: int = 20,
-        history_weight: float = 0.4, # SUBIDO A 0.4 (40%) para dar peso a la experiencia
-        similarity_weight: float = 0.6, # BAJADO A 0.6 (60%) para balancear
+        top_k: int = 10,
         use_cache: bool = True,
         cache_max_age_days: int = 7
     ) -> List[Dict]:
         try:
-            # 1. Intentar usar Cache L1 (Base de Datos)
+            # 1. Intentar usar Cache L1
             if use_cache:
                 cached_recommendations = crud.get_recomendaciones_cache(db, curso_id, max_age_days=cache_max_age_days)
-                
-                # FIX: Si el cache tiene menos elementos que los solicitados (ej: 5 vs 100), ignorar cache y recalcular.
                 if cached_recommendations and len(cached_recommendations) >= top_k:
                     recommendations = []
                     for cache_entry in cached_recommendations[:top_k]:
@@ -92,31 +123,61 @@ class RecommendationEngine:
                             'score_combinado': round(cache_entry.score_combinado * 100, 2),
                             'score_historico': round(cache_entry.score_historico * 100, 2),
                             'score_semantico': round(cache_entry.score_semantico * 100, 2),
-                            'evidencias': cache_entry.evidencias,
-                            'shap_explanations': cache_entry.shap_explanations,
+                            'score_relativo': round(cache_entry.score_combinado * 100, 2), # Se recalcula luego
+                            'confianza_etiqueta': cache_entry.version_algoritmo, # Reciclado
+                            'xai_explanations': cache_entry.shap_explanations.get('text', ''),
                             'from_cache': True
                         })
+                    
+                    # Recalcular score_relativo para el subset en caché
+                    if recommendations:
+                        max_score = recommendations[0]['score_combinado']
+                        for rec in recommendations:
+                            rec['score_relativo'] = round((rec['score_combinado'] / max_score) * 100, 2) if max_score > 0 else 0
                     return recommendations
 
             # 2. Si no hay cache, calcular desde cero
             curso = crud.get_curso_by_id(db, curso_id)
             if not curso: return []
 
-            # --- LÓGICA DE VETERANOS (HISTORIAL) ---
+            # --- LÓGICA DE ASHP: HISTORIAL Y P_SAT ---
             historial = crud.get_historial_by_curso(db, curso_id)
             
-            # Contar cuántas veces ha dictado el curso cada docente
-            docente_semesters_count = {}
-            for h in historial:
-                docente_id = h.docente_id
-                docente_semesters_count[docente_id] = docente_semesters_count.get(docente_id, 0) + 1
+            # Obtener todos los periodos cronológicos en los que se dictó el curso
+            all_course_periods = sorted(list(set(h.periodo for h in historial)), reverse=True)
             
-            # Umbral para ser considerado "Experto/Veterano" (100% score histórico)
-            # Si tienes horarios de 2016 a 2023 (aprox 14-16 semestres), 8 semestres es un buen nivel de experto.
+            # Agrupar historial por docente
+            docente_history = {}
+            for h in historial:
+                if h.docente_id not in docente_history:
+                    docente_history[h.docente_id] = []
+                docente_history[h.docente_id].append(h.periodo)
+            
             VETERAN_THRESHOLD = 8 
-            # ---------------------------------------
+            W_SEM = 0.7
+            W_HIST = 0.3
+
+            def calculate_p_sat(docente_periods: List[str]) -> float:
+                """Calcula el factor de penalización por saturación de semestres consecutivos."""
+                if not all_course_periods or not docente_periods:
+                    return 1.0
+                
+                # Contar cuántas veces seguidas dictó el curso contando desde el último periodo ofrecido
+                consecutive_count = 0
+                for period in all_course_periods:
+                    if period in docente_periods:
+                        consecutive_count += 1
+                    else:
+                        break
+                        
+                if consecutive_count >= 3:
+                    return 0.5
+                elif consecutive_count == 2:
+                    return 0.8
+                return 1.0
 
             # 3. Obtener Embeddings
+            curso_text = self.create_curso_text(curso)
             curso_embedding = embeddings_manager.get_or_create_embedding(
                 db_item=curso,
                 text_generator=self.create_curso_text,
@@ -140,92 +201,94 @@ class RecommendationEngine:
             if docentes_vectors.ndim == 3:
                 docentes_vectors = np.squeeze(docentes_vectors, axis=1)
 
-            # 4. Calcular Similitud Semántica (SBERT)
+            # 4. Calcular Similitud Semántica (S_BGE)
             similarities = cosine_similarity(curso_embedding, docentes_vectors)[0]
 
-            # 5. Calcular Score Final
+            # 5. Calcular Score Final (ASHP)
             final_scores = []
             for idx, docente_id in enumerate(docente_ids):
                 docente = crud.get_docente_by_id(db, docente_id)
                 if not docente: continue
                 
-                semantic_score = float(similarities[idx])
+                s_bge = float(similarities[idx])
                 
-                # Score Histórico Gradual (0.0 a 1.0 basado en experiencia)
-                semesters_taught = docente_semesters_count.get(docente_id, 0)
-                history_score = min(semesters_taught / VETERAN_THRESHOLD, 1.0)
+                # Historial y P_sat
+                d_periods = docente_history.get(docente_id, [])
+                semesters_taught = len(d_periods)
+                s_hist = min(semesters_taught / VETERAN_THRESHOLD, 1.0)
+                p_sat = calculate_p_sat(d_periods)
                 
-                combined_score = (history_score * history_weight) + (semantic_score * similarity_weight)
-                
-                evidencias = self._calculate_ner_evidencias(curso, docente)
+                combined_score = (s_bge * W_SEM) + (s_hist * p_sat * W_HIST)
                 
                 final_scores.append({
                     'docente_id': docente.id,
                     'docente_obj': docente,
                     'score_combinado': combined_score,
-                    'score_historico': history_score,
-                    'score_semantico': semantic_score,
-                    'evidencias': evidencias,
-                    'shap_explanations': {} # Se llenará abajo
+                    'score_historico': s_hist,
+                    'score_semantico': s_bge,
+                    'p_sat': p_sat
                 })
 
-            # 6. Ordenar
+            # 6. Ordenar por Score Final
             final_scores.sort(key=lambda x: x['score_combinado'], reverse=True)
             top_results = final_scores[:top_k]
 
-            # 7. Generar Explicaciones con SHAP Real
-            # Preparamos datos para el modelo de explicación
-            training_data = []
-            for result in top_results:
-                evidencias = result['evidencias']
-                training_data.append({
-                    'entidades_match_count': len(evidencias.get('entidades_clave', [])),
-                    'history_score': result['score_historico'],
-                    'semantic_score': result['score_semantico'], # ADDED: Crucial for SHAP to explain the score
-                    'target': result['score_combinado']
-                })
+            if not top_results:
+                return []
 
-            # Entrenar modelo explicativo (overfitting intencional para explicar la fórmula actual)
-            if training_data:
-                self.explanation_model.train(training_data)
-                
-                # Generar explicaciones
-                df_predict = pd.DataFrame(training_data)
-                shap_values_list = self.explanation_model.explain(df_predict)
-            else:
-                shap_values_list = [{}] * len(top_results)
+            winner_score = top_results[0]['score_combinado']
 
+            # 7. Formatear Resultados (XAI NLG, Relative Score, Confidence)
             recommendations_to_save = []
             recommendations_for_api = []
             
+            # Solo generar NLG para los top 3 para ahorrar tiempo/costos
             for idx, result in enumerate(top_results):
-                shap_expl = shap_values_list[idx] if idx < len(shap_values_list) else {}
-                
-                # Mapear nombres de features a nombres amigables si es necesario
-                # (El frontend espera claves específicas, ajustamos si hace falta)
-                
                 docente = result['docente_obj']
+                
+                # XAI NLG (Traducción)
+                xai_text = ""
+                if idx < 3: # Limitar a los mejores
+                    docente_text = self.create_docente_text(docente)
+                    xai_text = self._generate_nlg_explanation(curso_text, docente_text)
+                
+                # Etiqueta de Confianza Absoluta
+                score_abs = result['score_combinado']
+                if score_abs >= 0.80: conf_tag = "Confianza Muy Alta"
+                elif score_abs >= 0.60: conf_tag = "Confianza Alta"
+                elif score_abs >= 0.40: conf_tag = "Confianza Media"
+                else: conf_tag = "Confianza Baja"
+
+                # Score Relativo
+                score_rel = (score_abs / winner_score) if winner_score > 0 else 0
+
                 rec_data = {
                     'docente_id': docente.id,
                     'nombre': docente.nombre,
                     'email': docente.email,
                     'grado': docente.grado,
                     'entidades_clave': docente.entidades_clave,
-                    'score_combinado': round(result['score_combinado'] * 100, 2),
+                    'score_combinado': round(score_abs * 100, 2),
                     'score_historico': round(result['score_historico'] * 100, 2),
                     'score_semantico': round(result['score_semantico'] * 100, 2),
-                    'evidencias': result['evidencias'],
-                    'shap_explanations': shap_expl,
+                    'score_relativo': round(score_rel * 100, 2),
+                    'confianza_etiqueta': conf_tag,
+                    'xai_explanations': xai_text,
                     'from_cache': False
                 }
                 
                 recommendations_for_api.append(rec_data)
-                recommendations_to_save.append(rec_data)
+                
+                # Guardamos en el campo shap_explanations por compatibilidad de esquema
+                rec_save = rec_data.copy()
+                rec_save['shap_explanations'] = {'text': xai_text}
+                rec_save['version_algoritmo'] = conf_tag # Reutilizamos campo para la confianza
+                recommendations_to_save.append(rec_save)
 
             # 8. Guardar en Cache
             if use_cache:
                 crud.save_recomendaciones_cache(
-                    db, curso_id, recommendations_to_save, version_algoritmo="sbert_v2.0_veteran"
+                    db, curso_id, recommendations_to_save, version_algoritmo="ashp_v1.0"
                 )
 
             return recommendations_for_api

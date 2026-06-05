@@ -73,8 +73,13 @@ class DOCXProcessor:
             "ciclo": 1 (entero),
             "descripcion": "string (Texto de la SUMILLA)",
             "entidades_clave": ["string", "string"],
-            "perfil_sintetico": "string (Resumen denso de los temas para búsqueda vectorial)"
+            "competencias_tecnicas": "string o [Información No Declarada]",
+            "experiencia_docente": "string o [Información No Declarada]",
+            "formacion_academica": "string o [Información No Declarada]"
         }}
+        IMPORTANTE: 
+        - En lugar de un perfil sintético libre, extrae los requerimientos del curso en las categorías indicadas.
+        - Si el sílabo no especifica requerimientos explícitos para una categoría, DEBES escribir exactamente la cadena "[Información No Declarada]".
 
         Texto:
         {raw_text[:7000]}
@@ -117,7 +122,12 @@ class DOCXProcessor:
                 nombre = filename.replace('.docx', '').replace('_', ' ')
 
             # 3. Enriquecer con datos del JSON
-            target_text = ai_data.get('perfil_sintetico', full_text)
+            comp_tec = ai_data.get('competencias_tecnicas', '[Información No Declarada]')
+            exp_doc = ai_data.get('experiencia_docente', '[Información No Declarada]')
+            form_acad = ai_data.get('formacion_academica', '[Información No Declarada]')
+            
+            target_text = f"Requerimientos del Curso - Competencias Técnicas: {comp_tec}. Experiencia Docente: {exp_doc}. Formación Académica: {form_acad}."
+            
             entities = ai_data.get('entidades_clave', [])
             
             return {

@@ -44,13 +44,16 @@ class PDFProcessor:
         Analiza este PDF (Curriculum Vitae) y devuelve un JSON estricto con el siguiente formato.
         IMPORTANTE: 
         - 'nombre' debe ser EXCLUSIVAMENTE el nombre completo de la persona (el profesor o candidato). NUNCA extraigas nombres de universidades, empresas o instituciones en este campo.
-        - 'perfil_sintetico' debe ser un resumen denso y redactado de habilidades, experiencia y estudios.
+        - En lugar de un resumen libre, extrae la información en las categorías fijas indicadas abajo.
+        - Si no encuentras información para alguna de las categorías de texto, DEBES escribir exactamente la cadena "[Información No Declarada]". No lo dejes vacío ni inventes datos.
         - 'entidades_clave' debe ser una lista de strings con tecnologías, metodologías o áreas de conocimiento detectadas.
         {
             "nombre": "string",
             "email": "string",
             "grado": "string",
-            "perfil_sintetico": "string",
+            "competencias_tecnicas": "string o [Información No Declarada]",
+            "experiencia_docente": "string o [Información No Declarada]",
+            "formacion_academica": "string o [Información No Declarada]",
             "entidades_clave": ["string", "string"]
         }
         """
@@ -105,7 +108,11 @@ class PDFProcessor:
             if not name and filename:
                 name = filename.replace(".pdf", "").replace("_", " ").strip().title()
 
-            final_text = ai_data.get("perfil_sintetico", "")
+            comp_tec = ai_data.get("competencias_tecnicas", "[Información No Declarada]")
+            exp_doc = ai_data.get("experiencia_docente", "[Información No Declarada]")
+            form_acad = ai_data.get("formacion_academica", "[Información No Declarada]")
+            
+            final_text = f"Competencias Técnicas: {comp_tec}. Experiencia Docente: {exp_doc}. Formación Académica: {form_acad}."
             entities = ai_data.get("entidades_clave", [])
 
             return {
