@@ -10,8 +10,8 @@ import hashlib
 
 logger = logging.getLogger(__name__)
 
-# Configuración de ChromaDB
-BASE_DIR = Path("backend/data/chroma_db")
+# Configuración de ChromaDB (usamos /tmp/ porque Cloud Run tiene el resto del disco en solo-lectura)
+BASE_DIR = Path("/tmp/chroma_db")
 BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 class EmbeddingsManager:
