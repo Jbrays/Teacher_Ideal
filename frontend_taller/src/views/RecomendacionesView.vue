@@ -94,12 +94,9 @@
           <!-- Divider -->
           <div class="w-full h-px bg-gray-200 my-4"></div>
 
-          <!-- Explicaciones XAI (Gemini) -->
+          <!-- Explicaciones XAI (Invisible) -->
           <div v-if="docente.xai_explanations" 
-               class="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
-            <h4 class="text-sm font-semibold text-indigo-700 mb-3 flex items-center gap-2">
-              <span>🧠 Análisis de Inteligencia Artificial (Gemini XAI)</span>
-            </h4>
+               class="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
             <div class="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
               {{ docente.xai_explanations }}
             </div>

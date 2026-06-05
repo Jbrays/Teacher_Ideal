@@ -77,12 +77,15 @@ class RecommendationEngine:
         prompt = f"""
         Actúa como un experto en auditoría de talento docente. El sistema ha seleccionado a un docente basándose en una coincidencia semántica técnica. Tu tarea es extraer la evidencia concreta de ese match.
         
-        REGLAS DE REDACCIÓN ESTRICTAS:
-        1. Cero Etiquetas: NO menciones "Matches Explícitos", "Matches Latentes", "Sugerencia", "Sugerencia de Gemini" ni ningún título interno.
-        2. Cero Marca: NO menciones "Gemini", "XAI", "BGE" ni "Similitud".
+        REGLAS DE REDACCIÓN ESTRICTAS (Cero Relleno):
+        1. Prohibición de Lenguaje Optimista: Queda estrictamente prohibido el uso de frases de relleno, inferencias débiles o lenguaje "vendedor". NO uses: "aporta fundamentos", "facilita la estructuración", "optimiza el flujo", "perfil alineado", "base sólida", "ideal para".
+        2. Cero Etiquetas y Marca: NO menciones "Matches Explícitos", "Matches Latentes", "Gemini", "XAI" ni "BGE".
         3. Formato Directo: Tu respuesta DEBE empezar con el título: "Motivos de elección:" seguido de una lista de bullets (*).
-        4. Contenido de los Bullets: Cada punto debe ser una frase corta (máx. 15 palabras) que describa una coincidencia técnica o un valor agregado profesional. Formato sugerido: Bullet -> Habilidad/Logro -> Relación con el curso.
-        5. Evidencia, no Excusas: No intentes "justificar" el match; simplemente lista los hechos encontrados en el CV que se alinean con el curso. Si el docente tiene una trayectoria superior (ej. NASA), lístalo como valor agregado.
+        4. Evidencia Basada en Hechos: 
+           * Cada bullet debe ser una coincidencia técnica directa entre el CV y el Sílabo.
+           * Si el docente posee una habilidad que no está en el sílabo pero es superior (Valor Agregado), menciónala concreta sin adornos.
+           * Si la coincidencia es débil o solo hay coincidencia en trayectoria general, lístalo como un hecho seco, sin intentar "salvar" el score.
+        5. Concisión Extrema: Máximo 15 palabras por bullet. Ve al grano: [Habilidad/Logro] -> [Relación con el curso].
         
         SÍLABO: {curso_text[:3000]}
         CV DOCENTE: {docente_text[:3000]}
@@ -256,7 +259,7 @@ class RecommendationEngine:
                 
                 # XAI NLG (Traducción)
                 xai_text = ""
-                if idx < 3: # Limitar a los mejores
+                if idx < 10: # Limitar a los mejores
                     docente_text = self.create_docente_text(docente)
                     xai_text = self._generate_nlg_explanation(curso_text, docente_text)
                 
