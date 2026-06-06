@@ -21,7 +21,7 @@
       <!-- Mensaje de bienvenida simple -->
       <div class="animate-fadeIn bg-white p-10 rounded-28px shadow-sm">
         <h2 class="text-3xl font-bold text-on-surface mb-4">
-          Academic Orchestrator
+          Vektora
         </h2>
 
         <p class="text-outline text-lg mb-8 leading-relaxed">
