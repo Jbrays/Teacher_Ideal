@@ -1,22 +1,22 @@
 <template>
-  <div class="min-h-screen bg-gray-100">
+  <div class="min-h-screen bg-surface">
 
     <!-- Header -->
     <header class="w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between">
       <button
         @click="$router.push('/ciclos')"
-        class="text-gray-600 hover:text-indigo-500 transition text-xl"
+        class="w-10 h-10 flex items-center justify-center rounded-full bg-surface hover:bg-surface-dim text-on-surface transition"
       >
         ←
       </button>
 
-      <h1 class="text-xl font-semibold text-gray-800">
+      <h1 class="text-xl font-semibold text-on-surface">
         Cursos – Ciclo {{ ciclo }}
       </h1>
 
       <button
         @click="$router.push('/settings')"
-        class="text-gray-600 hover:text-indigo-500 transition text-xl"
+        class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container text-primary hover:bg-surface-dim transition shadow-sm"
       >
         ⚙️
       </button>
@@ -26,9 +26,9 @@
     <div class="content max-w-4xl mx-auto px-6 py-10">
 
       <!-- No cursos -->
-      <div v-if="!cursos.length" class="text-center mt-20 text-gray-600">
+      <div v-if="!cursos.length" class="text-center mt-20 text-outline">
         <h2 class="text-xl font-semibold mb-3">No hay cursos en este ciclo</h2>
-        <p>Procesa los sílabos o revisa la carpeta seleccionada.</p>
+        <p>Procesa los sílabos o revisa el repositorio seleccionado.</p>
       </div>
 
       <!-- Lista de cursos -->
@@ -38,11 +38,11 @@
           v-for="curso in cursos"
           :key="curso.id"
           @click="selectCurso(curso)"
-          class="bg-white p-6 rounded-2xl shadow hover:shadow-lg cursor-pointer border border-transparent hover:border-indigo-500 transition"
+          class="bg-white p-6 rounded-28px shadow-sm hover:shadow-md cursor-pointer border border-transparent hover:border-surface-dim transition-shadow"
         >
-          <h3 class="text-lg font-semibold text-gray-800">{{ curso.nombre }}</h3>
+          <h3 class="text-lg font-semibold text-on-surface">{{ curso.nombre }}</h3>
 
-          <p v-if="curso.codigo" class="text-gray-500 text-sm mt-1">
+          <p v-if="curso.codigo" class="text-outline text-sm mt-1">
             Código: {{ curso.codigo }}
           </p>
         </div>

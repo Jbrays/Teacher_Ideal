@@ -1,22 +1,22 @@
 <template>
-  <div class="min-h-screen bg-gray-100">
+  <div class="min-h-screen bg-surface">
 
     <!-- Header Fijo -->
     <header class="sticky top-0 z-50 w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between">
       <button
         @click="goBack"
-        class="text-gray-600 hover:text-indigo-500 transition text-xl"
+        class="w-10 h-10 flex items-center justify-center rounded-full bg-surface hover:bg-surface-dim text-on-surface transition"
       >
         ←
       </button>
 
-      <h1 class="text-lg font-semibold text-gray-800">
+      <h1 class="text-lg font-semibold text-on-surface">
         Recomendaciones – {{ cursoNombre }}
       </h1>
 
       <button
         @click="$router.push('/settings')"
-        class="text-gray-600 hover:text-indigo-500 transition text-xl"
+        class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container text-primary hover:bg-surface-dim transition shadow-sm"
       >
         ⚙️
       </button>
@@ -32,7 +32,7 @@
       </div>
 
       <!-- Sin recomendaciones -->
-      <div v-else-if="!recommendations.length" class="text-center mt-20 text-gray-600">
+      <div v-else-if="!recommendations.length" class="text-center mt-20 text-outline">
         <h2 class="text-xl font-semibold mb-3">No hay recomendaciones</h2>
         <p>Revisa los datos procesados o selecciona otro curso.</p>
       </div>
@@ -43,7 +43,7 @@
         <div
           v-for="(docente, index) in recommendationsSorted"
           :key="index"
-          class="bg-white p-6 rounded-2xl shadow hover:shadow-xl transition border border-transparent hover:border-indigo-400"
+          class="bg-white p-6 md:p-8 rounded-28px shadow-sm hover:shadow-md transition-shadow border border-transparent hover:border-surface-dim"
         >
 
           <!-- Top row -->
@@ -58,27 +58,27 @@
             </div>
 
             <div class="flex-1 px-6">
-              <h3 class="text-lg font-semibold text-gray-800">
+              <h3 class="text-lg font-semibold text-on-surface">
                 {{ docente.nombre }}
               </h3>
 
-              <p class="text-gray-500 text-sm">{{ docente.email || 'Sin email' }}</p>
-              <p class="text-indigo-500 text-sm font-medium mt-1">
+              <p class="text-outline text-sm">{{ docente.email || 'Sin email' }}</p>
+              <p class="text-primary text-sm font-medium mt-1">
                 {{ docente.grado || "Sin grado académico" }}
               </p>
-              <div class="mt-2 flex items-center gap-2">
+              <div class="mt-2 flex flex-wrap items-center gap-2">
                 <span 
-                  class="px-2 py-1 text-xs font-semibold rounded-full border"
+                  class="px-3 py-1 text-xs font-semibold rounded-full border"
                   :class="{
-                    'bg-green-100 text-green-700 border-green-200': docente.confianza_etiqueta === 'Confianza Muy Alta',
-                    'bg-blue-100 text-blue-700 border-blue-200': docente.confianza_etiqueta === 'Confianza Alta',
-                    'bg-yellow-100 text-yellow-700 border-yellow-200': docente.confianza_etiqueta === 'Confianza Media',
-                    'bg-red-100 text-red-700 border-red-200': docente.confianza_etiqueta === 'Confianza Baja'
+                    'bg-green-50 text-green-700 border-green-200': docente.confianza_etiqueta === 'Confianza Muy Alta',
+                    'bg-blue-50 text-blue-700 border-blue-200': docente.confianza_etiqueta === 'Confianza Alta',
+                    'bg-yellow-50 text-yellow-700 border-yellow-200': docente.confianza_etiqueta === 'Confianza Media',
+                    'bg-red-50 text-red-700 border-red-200': docente.confianza_etiqueta === 'Confianza Baja'
                   }"
                 >
                   {{ docente.confianza_etiqueta }}
                 </span>
-                <span class="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-full border border-gray-200" title="Rendimiento respecto al primer puesto">
+                <span class="px-3 py-1 bg-surface-container text-outline text-xs font-semibold rounded-full border border-surface-dim" title="Rendimiento respecto al primer puesto">
                   Match Relativo: {{ docente.score_relativo }}%
                 </span>
               </div>
@@ -87,7 +87,7 @@
             <!-- Botón de purga (Derecho al olvido) -->
             <button 
               @click="handleDelete(docente)" 
-              class="mr-4 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition text-xs font-semibold flex items-center gap-1 shadow-sm border border-red-100"
+              class="mr-4 text-red-600 hover:text-white bg-red-50 hover:bg-red-600 px-4 py-2 rounded-full transition-colors text-xs font-semibold flex items-center gap-1 border border-red-100"
               title="Derecho al Olvido: Purgar perfil y vectores"
             >
               🗑️ Purgar
@@ -96,7 +96,7 @@
             <!-- Score circle -->
             <div class="relative flex items-center justify-center">
               <div
-                class="w-20 h-20 rounded-full flex items-center justify-center font-bold text-indigo-600"
+                class="w-20 h-20 rounded-full flex items-center justify-center font-bold text-primary"
                 :style="circleStyle(docente.score_combinado)"
               >
                 <div class="absolute w-16 h-16 bg-white rounded-full flex items-center justify-center text-lg">
@@ -108,26 +108,26 @@
           </div>
 
           <!-- Divider -->
-          <div class="w-full h-px bg-gray-200 my-4"></div>
+          <div class="w-full h-px bg-surface-container my-6"></div>
 
           <!-- XAI Intrínseca -->
           <div v-if="docente.xai_explanations" 
-               class="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
-            <h4 class="text-sm font-bold text-gray-800 mb-2">Auditoría del Emparejamiento</h4>
-            <div class="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+               class="mb-6 p-5 bg-surface rounded-2xl border border-surface-dim">
+            <h4 class="text-sm font-bold text-on-surface mb-3">Auditoría del Emparejamiento</h4>
+            <div class="text-sm text-outline whitespace-pre-wrap leading-relaxed">
               {{ docente.xai_explanations }}
             </div>
           </div>
 
           <!-- Detalles de Entidades (Extracción dura) -->
-          <div class="space-y-3 text-sm mt-4">
+          <div class="space-y-3 text-sm mt-2">
             <div v-if="docente.evidencias?.entidades_clave?.length">
-              <p class="font-medium text-gray-700 mb-2">Tecnologías y conceptos en común con el sílabo:</p>
+              <p class="font-medium text-outline mb-3">Tecnologías y conceptos en común con el sílabo:</p>
               <div class="flex flex-wrap gap-2">
                 <span
                   v-for="e in docente.evidencias.entidades_clave"
                   :key="e"
-                  class="px-3 py-1 rounded-full text-white bg-indigo-500 text-xs font-medium shadow-sm"
+                  class="px-4 py-1.5 rounded-lg bg-surface-container text-on-surface text-xs font-medium border border-surface-dim"
                 >
                   {{ e }}
                 </span>

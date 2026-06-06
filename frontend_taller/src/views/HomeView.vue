@@ -1,15 +1,15 @@
 <template>
-  <div class="min-h-screen bg-gray-100">
+  <div class="min-h-screen bg-surface">
 
     <!-- Header -->
     <header class="w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-800">
+      <h1 class="text-xl font-semibold text-on-surface">
         Hola, {{ userName }}
       </h1>
 
       <button
         @click="$router.push('/settings')"
-        class="w-10 h-10 flex items-center justify-center rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition"
+        class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container text-primary hover:bg-surface-dim transition shadow-sm"
       >
         ⚙️
       </button>
@@ -19,18 +19,18 @@
     <div class="max-w-3xl mx-auto px-6 py-20 text-center">
 
       <!-- Mensaje de bienvenida simple -->
-      <div class="animate-fadeIn">
-        <h2 class="text-3xl font-bold text-gray-800 mb-4">
-          ¡Bienvenido al Sistema de Evaluación Docente!
+      <div class="animate-fadeIn bg-white p-10 rounded-28px shadow-sm">
+        <h2 class="text-3xl font-bold text-on-surface mb-4">
+          Academic Orchestrator
         </h2>
 
-        <p class="text-gray-600 text-lg mb-8">
-          Utiliza este sistema para gestionar y recomendar docentes basándose en IA.
+        <p class="text-outline text-lg mb-8 leading-relaxed">
+          Sistema de Análisis de Talento Docente impulsado por IA. Mapeo semántico y recomendación de perfiles.
         </p>
 
-        <p class="text-gray-500 text-sm">
-          Si aún no has configurado tus carpetas, ve a los 
-          <span class="inline-flex items-center gap-1 text-indigo-600 font-medium">
+        <p class="text-outline text-sm">
+          Si aún no has configurado tus repositorios de datos, ve a los 
+          <span class="inline-flex items-center gap-1 text-primary font-medium">
             ajustes ⚙️
           </span>
         </p>

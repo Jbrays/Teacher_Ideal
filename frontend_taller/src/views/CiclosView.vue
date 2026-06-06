@@ -1,13 +1,13 @@
 <template>
-  <div class="min-h-screen bg-gray-100">
+  <div class="min-h-screen bg-surface">
     
     <!-- Header -->
     <header class="w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between">
       <div></div>
-      <h1 class="text-xl font-semibold text-gray-800">Selecciona un Ciclo</h1>
+      <h1 class="text-xl font-semibold text-on-surface">Selecciona un Ciclo</h1>
       <button
         @click="$router.push('/settings')"
-        class="text-gray-600 hover:text-indigo-500 transition text-xl"
+        class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container text-primary hover:bg-surface-dim transition shadow-sm"
       >
         ⚙️
       </button>
@@ -17,12 +17,12 @@
     <div class="content max-w-4xl mx-auto px-6 py-10">
       
       <!-- NO DATA -->
-      <div v-if="!ciclos.length" class="text-center text-gray-600 mt-20">
+      <div v-if="!ciclos.length" class="text-center text-outline mt-20">
         <h2 class="text-xl font-semibold mb-3">No hay ciclos disponibles</h2>
-        <p class="text-gray-500 mb-6">Configura las carpetas y procesa los archivos primero.</p>
+        <p class="mb-6">Configura los repositorios y procesa los archivos primero.</p>
         <button
           @click="$router.push('/settings')"
-          class="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-6 rounded-xl font-semibold shadow"
+          class="bg-primary hover:bg-primary-container text-white py-2 px-6 rounded-full font-semibold shadow-sm transition-colors"
         >
           Ir a Configuración
         </button>
@@ -34,9 +34,9 @@
           v-for="ciclo in ciclos"
           :key="ciclo"
           @click="selectCiclo(ciclo)"
-          class="bg-white shadow hover:shadow-lg transition cursor-pointer p-8 rounded-2xl text-center border border-transparent hover:border-indigo-500"
+          class="bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer p-8 rounded-28px text-center border border-transparent hover:border-surface-dim"
         >
-          <h3 class="text-2xl font-semibold text-indigo-700">Ciclo {{ ciclo }}</h3>
+          <h3 class="text-2xl font-semibold text-primary">Ciclo {{ ciclo }}</h3>
         </div>
       </div>
 

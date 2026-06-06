@@ -1,15 +1,15 @@
 <template>
-  <div class="min-h-screen bg-gray-100">
+  <div class="min-h-screen bg-surface">
 
     <header class="w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between">
       <button
         @click="goBack"
-        class="text-gray-600 text-lg hover:text-indigo-500 transition"
+        class="text-outline text-lg hover:text-primary transition"
       >
         ← Atrás
       </button>
 
-      <h1 class="text-xl font-semibold text-gray-800">
+      <h1 class="text-xl font-semibold text-on-surface">
         Configuración
       </h1>
 
@@ -17,64 +17,64 @@
 
     <div class="max-w-3xl mx-auto px-6 py-10">
 
-      <div class="bg-white shadow rounded-2xl p-6 mb-8">
-        <h2 class="text-lg font-semibold text-gray-800 mb-4">Usuario</h2>
+      <div class="bg-white shadow-sm hover:shadow-md transition-shadow rounded-28px p-8 mb-8 border border-transparent hover:border-surface-dim">
+        <h2 class="text-lg font-semibold text-on-surface mb-4">Usuario</h2>
 
-        <p class="text-gray-700 font-medium">
+        <p class="text-outline font-medium">
           {{ userEmail }}
         </p>
 
         <button
           @click="logout"
-          class="mt-4 w-full bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg font-semibold shadow transition"
+          class="mt-6 w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-3 rounded-full font-semibold transition-colors"
         >
           Cerrar sesión
         </button>
       </div>
 
-      <div class="bg-white shadow rounded-2xl p-6 mb-8">
-        <h2 class="text-lg font-semibold text-gray-800 mb-4">Carpetas de Google Drive</h2>
+      <div class="bg-white shadow-sm hover:shadow-md transition-shadow rounded-28px p-8 mb-8 border border-transparent hover:border-surface-dim">
+        <h2 class="text-lg font-semibold text-on-surface mb-4">Carpetas de Datos</h2>
 
-        <p class="text-gray-500 mb-6 text-sm">
-          Selecciona las carpetas correspondientes para procesar los archivos.
+        <p class="text-outline mb-6 text-sm">
+          Selecciona los repositorios para procesar los archivos.
           <strong>Todas son obligatorias.</strong>
         </p>
 
         <div v-for="folder in folderList" :key="folder.key" class="mb-5">
-          <label class="block font-semibold text-gray-700 mb-1">
+          <label class="block font-semibold text-on-surface mb-2">
             {{ folder.icon }} {{ folder.label }}
-            <span v-if="folder.optional" class="text-gray-400 text-xs font-normal">(opcional)</span>
+            <span v-if="folder.optional" class="text-outline text-xs font-normal">(opcional)</span>
           </label>
 
           <button
             @click="selectFolderHandler(folder.key)"
-            class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-xl font-semibold shadow transition"
+            class="w-full bg-surface-container hover:bg-surface-dim text-primary py-3 rounded-full font-semibold transition-colors border border-surface-dim"
           >
-            {{ folderState[folder.key]?.id ? 'Cambiar carpeta' : 'Seleccionar carpeta' }}
+            {{ folderState[folder.key]?.id ? 'Cambiar repositorio' : 'Seleccionar repositorio' }}
           </button>
 
           <p v-if="folderState[folder.key]?.id" class="text-sm font-medium text-green-700 mt-2 mb-1">
-            Carpeta vinculada: "{{ folderState[folder.key].name }}"
+            Vinculado: "{{ folderState[folder.key].name }}"
           </p>
         </div>
 
-        <div class="border-t border-gray-200 my-6"></div>
+        <div class="border-t border-surface-container my-8"></div>
 
         <button
           :disabled="!allFoldersSelected || isAnyProcessing || isSynced"
           @click="processData"
-          class="w-full bg-gray-800 hover:bg-gray-900 text-white py-3 rounded-xl font-semibold shadow transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+          class="w-full bg-primary hover:bg-primary-container text-white py-4 rounded-full font-semibold shadow-sm transition-colors disabled:bg-surface-dim disabled:text-outline disabled:cursor-not-allowed"
         >
           <span v-if="isSynced">Sincronización completada ✓</span>
           <span v-else-if="isAnyProcessing">Procesando...</span>
           <span v-else>Guardar Configuración y Sincronizar Todo</span>
         </button>
 
-        <p v-if="processStatus" class="text-gray-500 text-sm mt-3 whitespace-pre-line">
+        <p v-if="processStatus" class="text-outline text-sm mt-4 whitespace-pre-line text-center font-medium">
           {{ processStatus }}
         </p>
 
-        <p v-if="errorMessage" class="text-red-500 text-sm mt-3">
+        <p v-if="errorMessage" class="text-red-600 bg-red-50 p-3 rounded-lg border border-red-200 text-sm mt-4">
           ❌ {{ errorMessage }}
         </p>
       </div>

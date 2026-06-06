@@ -10,7 +10,8 @@ export default {};
 html, body {
   margin: 0;
   padding: 0;
-  font-family: system-ui, sans-serif;
-  background: #f5f6fa;
+  font-family: 'Hanken Grotesk', sans-serif;
+  background-color: theme('colors.surface');
+  color: theme('colors.on-surface');
 }
 </style>
