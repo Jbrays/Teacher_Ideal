@@ -50,23 +50,7 @@ class RecommendationEngine:
             logger.error(f"Error iniciando Vertex AI para NLG: {e}")
             self.gemini_model = None
 
-    def create_curso_text(self, curso: Curso) -> str:
-        nombre_curso = f"Curso: {curso.nombre}. " * 3
-        perfil = curso.perfil_sintetico or ""
-        entidades = ", ".join(curso.entidades_clave) if curso.entidades_clave else ""
-        return f"{nombre_curso} {perfil} Tecnologías y temas clave: {entidades}"
 
-    def create_docente_text(self, docente: Docente) -> str:
-        perfil = docente.perfil_sintetico or ""
-        entidades = ", ".join(docente.entidades_clave) if docente.entidades_clave else ""
-        return f"{perfil} Habilidades y experiencia técnica: {entidades}"
-
-    def _calculate_ner_evidencias(self, curso: Curso, docente: Docente) -> Dict:
-        curso_entidades = set(curso.entidades_clave) if curso.entidades_clave else set()
-        docente_entidades = set(docente.entidades_clave) if docente.entidades_clave else set()
-        return {
-            "entidades_clave": list(curso_entidades.intersection(docente_entidades))
-        }
 
     def get_embedding_for_text(self, text: str) -> np.ndarray:
         model = get_sbert_model()
@@ -74,25 +58,25 @@ class RecommendationEngine:
             raise Exception("Modelo SBERT no cargado")
         return model.encode([text], convert_to_numpy=True)[0].reshape(1, -1)
 
-    def _generate_nlg_explanation(self, curso_text: str, docente_text: str) -> str:
-        if not self.gemini_model:
-            return "Motivos de elección:\n* El docente posee un perfil semántico que coincide con los requerimientos del curso."
+    def _generate_nlg_explanation(self, winning_matches: List[Dict]) -> str:
+        if not self.gemini_model or not winning_matches:
+            return "Motivos de elección:\n* El docente posee competencias alineadas con la materia."
             
+        evidencia_text = "\\n".join([f"- Sílabo exige: {m['curso_entidad']} <-> Docente posee: {m['docente_entidad']} (Similitud: {m['score']*100:.1f}%)" for m in winning_matches])
+        
         prompt = f"""
-        Actúa como un experto en auditoría de talento docente. El sistema ha seleccionado a un docente basándose en una coincidencia semántica técnica. Tu tarea es extraer la evidencia concreta de ese match.
+        Actúa como un experto en auditoría de talento docente. El sistema ha seleccionado a un docente basándose en un Match Atómico de entidades.
+        Tu ÚNICA tarea es formatear la lista de evidencias matemáticas en bullets limpios, legibles y profesionales. No adivines ni inventes razones.
         
         REGLAS DE REDACCIÓN ESTRICTAS (Cero Relleno):
-        1. Prohibición de Lenguaje Optimista: Queda estrictamente prohibido el uso de frases de relleno, inferencias débiles o lenguaje "vendedor". NO uses: "aporta fundamentos", "facilita la estructuración", "optimiza el flujo", "perfil alineado", "base sólida", "ideal para".
-        2. Cero Etiquetas y Marca: NO menciones "Matches Explícitos", "Matches Latentes", "Gemini", "XAI" ni "BGE".
+        1. Prohibición de Lenguaje Optimista: Queda estrictamente prohibido el uso de frases de relleno o lenguaje "vendedor".
+        2. Cero Etiquetas y Marca: NO menciones "Gemini", "XAI" ni "BGE".
         3. Formato Directo: Tu respuesta DEBE empezar con el título: "Motivos de elección:" seguido de una lista de bullets (*).
-        4. Evidencia Basada en Hechos: 
-           * Cada bullet debe ser una coincidencia técnica directa entre el CV y el Sílabo.
-           * Si el docente posee una habilidad que no está en el sílabo pero es superior (Valor Agregado), menciónala concreta sin adornos.
-           * Si la coincidencia es débil o solo hay coincidencia en trayectoria general, lístalo como un hecho seco, sin intentar "salvar" el score.
-        5. Concisión Extrema: Máximo 15 palabras por bullet. Ve al grano: [Habilidad/Logro] -> [Relación con el curso].
+        4. Evidencia Basada en Hechos: Transcribe el match directo. Si el match es débil, lístalo como un hecho seco.
+        5. Concisión Extrema: Máximo 15 palabras por bullet.
         
-        SÍLABO: {curso_text[:3000]}
-        CV DOCENTE: {docente_text[:3000]}
+        EVIDENCIAS GANADORAS DEL MATCH MATEMÁTICO:
+        {evidencia_text}
         """
         try:
             response = self.gemini_model.generate_content(
@@ -188,51 +172,65 @@ class RecommendationEngine:
                     return 0.8
                 return 1.0
 
-            # 3. Obtener Embeddings
-            curso_text = self.create_curso_text(curso)
-            curso_embedding = embeddings_manager.get_or_create_embedding(
-                db_item=curso,
-                text_generator=self.create_curso_text,
-                embedding_generator=self.get_embedding_for_text
-            )
-
-            docentes = crud.get_all_docentes(db)
-            docentes_embeddings_map = embeddings_manager.get_all_docente_embeddings(
-                db=db,
-                docentes=docentes,
-                text_generator=self.create_docente_text,
-                embedding_generator=self.get_embedding_for_text
-            )
-            
-            if not docentes_embeddings_map: return []
-
-            docente_ids = list(docentes_embeddings_map.keys())
-            docentes_vectors = np.array([docentes_embeddings_map[id] for id in docente_ids])
-            
-            # Asegurar que sea 2D
-            if docentes_vectors.ndim == 3:
-                docentes_vectors = np.squeeze(docentes_vectors, axis=1)
-
-            # 4. Calcular Similitud Semántica (S_BGE)
-            similarities = cosine_similarity(curso_embedding, docentes_vectors)[0]
-
-            # 5. Calcular Score Final (ASHP)
-            final_scores = []
-            for idx, docente_id in enumerate(docente_ids):
-                docente = crud.get_docente_by_id(db, docente_id)
-                if not docente: continue
+            # 3. Obtener Embeddings Atómicos
+            todas_entidades = set()
+            if curso.entidades_clave:
+                todas_entidades.update(curso.entidades_clave)
                 
-                s_bge = float(similarities[idx])
+            docentes = crud.get_all_docentes(db)
+            for d in docentes:
+                if d.entidades_clave:
+                    todas_entidades.update(d.entidades_clave)
+                    
+            entidades_vectores = embeddings_manager.get_entity_embeddings(list(todas_entidades), self.get_embedding_for_text)
+            
+            if not curso.entidades_clave or not entidades_vectores:
+                return []
+                
+            c_entities = curso.entidades_clave
+            c_vectors = np.array([entidades_vectores[e] for e in c_entities if e in entidades_vectores])
+            if c_vectors.ndim == 3: c_vectors = np.squeeze(c_vectors, axis=1)
+            if len(c_vectors) == 0: return []
+
+            # 4 y 5. Calcular Similitud Semántica (Match Atómico S_BGE) y Score Final (ASHP)
+            final_scores = []
+            for docente in docentes:
+                d_entities = docente.entidades_clave
+                if not d_entities:
+                    continue
+                    
+                d_vectors = np.array([entidades_vectores[e] for e in d_entities if e in entidades_vectores])
+                if len(d_vectors) == 0:
+                    continue
+                if d_vectors.ndim == 3: d_vectors = np.squeeze(d_vectors, axis=1)
+                
+                # Matriz Coseno: cada fila es una entidad del curso, cada col es una del docente
+                sim_matrix = cosine_similarity(c_vectors, d_vectors)
+                
+                # Para cada entidad del curso, máxima similitud
+                max_sims_per_c = np.max(sim_matrix, axis=1)
+                s_bge = float(np.mean(max_sims_per_c))
+                
+                # Extraer los mejores matches para XAI
+                best_matches = []
+                for i, c_ent in enumerate(c_entities):
+                    if i < len(max_sims_per_c):
+                        best_idx = int(np.argmax(sim_matrix[i]))
+                        best_matches.append({
+                            'curso_entidad': c_ent,
+                            'docente_entidad': d_entities[best_idx],
+                            'score': float(sim_matrix[i][best_idx])
+                        })
+                best_matches.sort(key=lambda x: x['score'], reverse=True)
+                top_evidencias = best_matches[:5]
                 
                 # Historial y P_sat
-                d_periods = docente_history.get(docente_id, [])
+                d_periods = docente_history.get(docente.id, [])
                 semesters_taught = len(d_periods)
                 s_hist = min(semesters_taught / VETERAN_THRESHOLD, 1.0)
                 p_sat = calculate_p_sat(d_periods)
                 
                 combined_score = (s_bge * W_SEM) + (s_hist * p_sat * W_HIST)
-                
-                evidencias = self._calculate_ner_evidencias(curso, docente)
                 
                 final_scores.append({
                     'docente_id': docente.id,
@@ -241,7 +239,7 @@ class RecommendationEngine:
                     'score_historico': s_hist,
                     'score_semantico': s_bge,
                     'p_sat': p_sat,
-                    'evidencias': evidencias
+                    'evidencias': {'matches_atomicos': top_evidencias}
                 })
 
             # 6. Ordenar por Score Final
@@ -261,11 +259,10 @@ class RecommendationEngine:
             for idx, result in enumerate(top_results):
                 docente = result['docente_obj']
                 
-                # XAI NLG (Traducción)
+                # XAI NLG (Traducción Atómica)
                 xai_text = ""
                 if idx < 10: # Limitar a los mejores
-                    docente_text = self.create_docente_text(docente)
-                    xai_text = self._generate_nlg_explanation(curso_text, docente_text)
+                    xai_text = self._generate_nlg_explanation(result['evidencias']['matches_atomicos'])
                 
                 # Etiqueta de Confianza Absoluta
                 score_abs = result['score_combinado']

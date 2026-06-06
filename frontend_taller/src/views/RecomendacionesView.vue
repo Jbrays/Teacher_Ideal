@@ -66,6 +66,22 @@
               <p class="text-indigo-500 text-sm font-medium mt-1">
                 {{ docente.grado || "Sin grado académico" }}
               </p>
+              <div class="mt-2 flex items-center gap-2">
+                <span 
+                  class="px-2 py-1 text-xs font-semibold rounded-full border"
+                  :class="{
+                    'bg-green-100 text-green-700 border-green-200': docente.confianza_etiqueta === 'Confianza Muy Alta',
+                    'bg-blue-100 text-blue-700 border-blue-200': docente.confianza_etiqueta === 'Confianza Alta',
+                    'bg-yellow-100 text-yellow-700 border-yellow-200': docente.confianza_etiqueta === 'Confianza Media',
+                    'bg-red-100 text-red-700 border-red-200': docente.confianza_etiqueta === 'Confianza Baja'
+                  }"
+                >
+                  {{ docente.confianza_etiqueta }}
+                </span>
+                <span class="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-full border border-gray-200" title="Rendimiento respecto al primer puesto">
+                  Match Relativo: {{ docente.score_relativo }}%
+                </span>
+              </div>
             </div>
 
             <!-- Botón de purga (Derecho al olvido) -->
@@ -94,9 +110,10 @@
           <!-- Divider -->
           <div class="w-full h-px bg-gray-200 my-4"></div>
 
-          <!-- Explicaciones XAI (Invisible) -->
+          <!-- XAI Intrínseca -->
           <div v-if="docente.xai_explanations" 
-               class="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+               class="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
+            <h4 class="text-sm font-bold text-gray-800 mb-2">Auditoría del Emparejamiento</h4>
             <div class="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
               {{ docente.xai_explanations }}
             </div>

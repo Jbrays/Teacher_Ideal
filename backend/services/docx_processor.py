@@ -63,13 +63,10 @@ class DOCXProcessor:
             return {}
 
         prompt = f"""
-        Actúa como un analista académico. Extrae los requerimientos técnicos del Sílabo en un JSON estricto.
-        
-        REGLAS DE EXTRACCIÓN CRÍTICAS:
-        - 'entidades_clave' y 'competencias_tecnicas': Extrae ÚNICAMENTE los conocimientos, herramientas y habilidades que el curso exige al docente.
-        - PROHIBICIÓN ESTRICTA: No extraigas nombres de la universidad, códigos de oficina, nombres de decanos o términos administrativos. Ignora cualquier mención a la "UPAO" o entidades institucionales; el match debe ser sobre la MATERIA del curso, no sobre la INSTITUCIÓN.
-        - Si no hay requerimientos explícitos, escribe "[Información No Declarada]".
-        
+        Actúa como analista académico. Extrae requerimientos técnicos del Sílabo en un JSON estricto.
+        REGLA DE ORO: Solo extrae la MATERIA del curso, no la INSTITUCIÓN.
+        - SÍ Incluye en competencias_tecnicas / entidades_clave: "Programación Orientada a Objetos", "Cálculo Integral", "Azure".
+        - NO Incluyas: "UPAO", "Sede Trujillo", "Decanato", "Criterios Institucionales".
         Formato JSON:
         {{
             "nombre": "string",
@@ -91,7 +88,8 @@ class DOCXProcessor:
             try:
                 response = self.model.generate_content(prompt)
                 cleaned_response = response.text.replace("```json", "").replace("```", "").strip()
-                return json.loads(cleaned_response)
+                data_dict = json.loads(cleaned_response)
+                return self._apply_hard_filter(data_dict)
             except Exception as e:
                 if attempt < max_retries - 1:
                     wait_time = 5 * (attempt + 1)
@@ -172,5 +170,23 @@ class DOCXProcessor:
             except Exception as rollback_err:
                 logger.error(f"Error en rollback: {rollback_err}")
             return None
+    def _apply_hard_filter(self, data: Dict) -> Dict:
+        prohibidas = ["universidad", "colegio", "ministerio", "sineace", "sunedu", "s.a.c.", "institución", "institucion", "decanato", "escuela", "ieee", "cip", "sede"]
+        
+        # Filtrar entidades_clave (lista)
+        if "entidades_clave" in data and isinstance(data["entidades_clave"], list):
+            filtered_entidades = []
+            for entidad in data["entidades_clave"]:
+                if not any(prohibida in entidad.lower() for prohibida in prohibidas):
+                    filtered_entidades.append(entidad)
+            data["entidades_clave"] = filtered_entidades
+            
+        # Filtrar competencias_tecnicas (string)
+        if "competencias_tecnicas" in data and isinstance(data["competencias_tecnicas"], str):
+            parts = [p.strip() for p in data["competencias_tecnicas"].split(",")]
+            filtered_parts = [p for p in parts if not any(prohibida in p.lower() for prohibida in prohibidas)]
+            data["competencias_tecnicas"] = ", ".join(filtered_parts) if filtered_parts else "[Información No Declarada]"
+            
+        return data
 
 docx_processor = DOCXProcessor()

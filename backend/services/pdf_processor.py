@@ -41,14 +41,11 @@ class PDFProcessor:
             return {}
 
         prompt = """
-        Analiza este PDF (Curriculum Vitae) y devuelve un JSON estricto.
-        
-        REGLAS DE EXTRACCIÓN CRÍTICAS:
-        - 'nombre': EXCLUSIVAMENTE el nombre de la persona.
-        - 'competencias_tecnicas' y 'entidades_clave': Extrae ÚNICAMENTE tecnologías, lenguajes de programación, metodologías, frameworks o conocimientos disciplinares específicos. 
-        - PROHIBICIÓN ESTRICTA: No incluyas nombres de universidades, centros de estudio, empresas, direcciones, ciudades o términos administrativos (ej. "UPAO", "Diplomado", "Grado") en los campos de competencias o entidades. Estos datos van únicamente en 'formacion_academica'.
-        - Si no hay información, escribe "[Información No Declarada]".
-        
+        Analiza este PDF (CV) y devuelve un JSON estricto.
+        REGLA DE ORO: Clasifica la información en competencias técnicas reales y datos institucionales.
+        - SÍ Incluye en competencias_tecnicas / entidades_clave: "Python", "AWS", "BPMN", "Deep Learning", "Sistemas de Información".
+        - NO Incluyas (Mover a formacion_academica): "Universidad Privada Antenor Orrego", "Ministerio de Salud", "Colegio de Ingenieros", "SINEACE".
+        PROHIBICIÓN: No uses lenguaje vago. Si no hay dato, escribe "[Información No Declarada]".
         Formato JSON:
         {
             "nombre": "string",
@@ -75,7 +72,8 @@ class PDFProcessor:
                 )
                 
                 cleaned_text = response.text.replace("```json", "").replace("```", "").strip()
-                return json.loads(cleaned_text)
+                data_dict = json.loads(cleaned_text)
+                return self._apply_hard_filter(data_dict)
                 
             except Exception as e:
                 if attempt < max_retries - 1:
@@ -162,5 +160,23 @@ class PDFProcessor:
             except Exception as rollback_err:
                 logger.error(f"Error en rollback: {rollback_err}")
             return None
+    def _apply_hard_filter(self, data: Dict) -> Dict:
+        prohibidas = ["universidad", "colegio", "ministerio", "sineace", "sunedu", "s.a.c.", "institución", "institucion", "decanato", "escuela", "ieee", "cip"]
+        
+        # Filtrar entidades_clave (lista)
+        if "entidades_clave" in data and isinstance(data["entidades_clave"], list):
+            filtered_entidades = []
+            for entidad in data["entidades_clave"]:
+                if not any(prohibida in entidad.lower() for prohibida in prohibidas):
+                    filtered_entidades.append(entidad)
+            data["entidades_clave"] = filtered_entidades
+            
+        # Filtrar competencias_tecnicas (string)
+        if "competencias_tecnicas" in data and isinstance(data["competencias_tecnicas"], str):
+            parts = [p.strip() for p in data["competencias_tecnicas"].split(",")]
+            filtered_parts = [p for p in parts if not any(prohibida in p.lower() for prohibida in prohibidas)]
+            data["competencias_tecnicas"] = ", ".join(filtered_parts) if filtered_parts else "[Información No Declarada]"
+            
+        return data
 
 pdf_processor = PDFProcessor()

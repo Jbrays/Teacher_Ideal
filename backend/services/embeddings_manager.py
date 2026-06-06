@@ -21,6 +21,7 @@ class EmbeddingsManager:
             # Usar distancia Coseno en la base de datos
             self.docentes_collection = self.client.get_or_create_collection(name="docentes", metadata={"hnsw:space": "cosine"})
             self.cursos_collection = self.client.get_or_create_collection(name="cursos", metadata={"hnsw:space": "cosine"})
+            self.entidades_collection = self.client.get_or_create_collection(name="entidades_global", metadata={"hnsw:space": "cosine"})
         except Exception as e:
             logger.error(f"Error inicializando ChromaDB: {e}")
             self.client = None
@@ -73,6 +74,60 @@ class EmbeddingsManager:
             
         db_item.embedding_hash = current_hash
         return new_vector
+
+    def get_entity_embeddings(self, entities: List[str], embedding_generator: Callable) -> Dict[str, np.ndarray]:
+        if not self.client:
+            raise Exception("ChromaDB no está inicializado")
+        
+        if not entities:
+            return {}
+            
+        entities = [e.strip() for e in entities if e.strip()]
+        if not entities:
+            return {}
+            
+        entity_ids = [self._generate_hash(e) for e in entities]
+        result_map = {}
+        missing_entities = []
+        missing_ids = []
+        
+        try:
+            result = self.entidades_collection.get(ids=entity_ids, include=["embeddings"])
+            if result and result.get("embeddings"):
+                for i, doc_id in enumerate(result["ids"]):
+                    try:
+                        idx = entity_ids.index(doc_id)
+                        ent = entities[idx]
+                        vec = np.array(result["embeddings"][i])
+                        if vec.ndim == 1:
+                            vec = vec.reshape(1, -1)
+                        result_map[ent] = vec
+                    except ValueError:
+                        pass
+        except Exception as e:
+            logger.error(f"Error consultando ChromaDB entidades: {e}")
+            
+        for ent, ent_id in zip(entities, entity_ids):
+            if ent not in result_map:
+                missing_entities.append(ent)
+                missing_ids.append(ent_id)
+                
+        if missing_entities:
+            for ent, ent_id in zip(missing_entities, missing_ids):
+                vec = embedding_generator(ent)
+                result_map[ent] = vec
+                
+                flat_vec = vec.flatten().tolist()
+                try:
+                    self.entidades_collection.upsert(
+                        ids=[ent_id],
+                        embeddings=[flat_vec],
+                        documents=[ent]
+                    )
+                except Exception as e:
+                    logger.error(f"Error guardando entidad en ChromaDB: {e}")
+                    
+        return result_map
 
     def get_all_docente_embeddings(self, db: Session, docentes: List[Docente], text_generator: Callable, embedding_generator: Callable) -> Dict[int, np.ndarray]:
         embeddings_map = {}
