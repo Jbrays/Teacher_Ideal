@@ -63,21 +63,16 @@ class DOCXProcessor:
             return {}
 
         prompt = f"""
-        Actúa como analista académico. Extrae requerimientos técnicos del Sílabo en un JSON estricto.
-        REGLA DE ORO: Solo extrae la MATERIA del curso, no la INSTITUCIÓN.
-        - SÍ Incluye en competencias_tecnicas / entidades_clave: "Programación Orientada a Objetos", "Cálculo Integral", "Azure".
-        - NO Incluyas: "UPAO", "Sede Trujillo", "Decanato", "Criterios Institucionales".
-        Formato JSON:
-        {{
-            "nombre": "string",
-            "codigo": "string",
-            "ciclo": 1,
-            "descripcion": "string",
-            "entidades_clave": ["string", "string"],
-            "competencias_tecnicas": "string",
-            "experiencia_docente": "string",
-            "formacion_academica": "string"
-        }}
+        Actúa como un experto en currículos académicos. Tu misión es realizar un mapeo exhaustivo de las competencias técnicas necesarias para dictar este curso.
+        METODOLOGÍA DE EXTRACCIÓN (OBLIGATORIA):
+        1. Análisis de la Sumilla: Extrae los conceptos generales.
+        2. Escaneo de la Programación Semanal: Analiza cada una de las unidades y semanas. Cada tecnología, herramienta, marco de trabajo (framework) o teoría mencionada en los "Contenidos Temáticos" o "Actividades de Aprendizaje" DEBE ser extraída como una competencia técnica.
+        3. Sintetización: Consolida todos los hallazgos en una lista única de competencias.
+        REGLAS ESTRICTAS:
+        - SÍ Incluye: Herramientas específicas (ej. Matlab, Azure, Oracle), metodologías (ej. Scrum, BPMN), teorías (ej. Big Data, Cálculo Diferencial).
+        - NO Incluyas: Nombres de la universidad, sedes, nombres de docentes, o frases administrativas.
+        - Sinceridad: Si el documento no menciona ninguna herramienta técnica, pon "[Información No Declarada]".
+        Formato JSON: {{ "nombre": "string", "codigo": "string", "ciclo": integer, "descripcion": "string", "entidades_clave": ["string", "string"], "competencias_tecnicas": "string", "experiencia_docente": "string", "formacion_academica": "string" }}
 
         Texto:
         {raw_text[:7000]}

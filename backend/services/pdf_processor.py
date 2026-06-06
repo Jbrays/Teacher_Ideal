@@ -42,20 +42,11 @@ class PDFProcessor:
 
         prompt = """
         Analiza este PDF (CV) y devuelve un JSON estricto.
-        REGLA DE ORO: Clasifica la información en competencias técnicas reales y datos institucionales.
-        - SÍ Incluye en competencias_tecnicas / entidades_clave: "Python", "AWS", "BPMN", "Deep Learning", "Sistemas de Información".
-        - NO Incluyas (Mover a formacion_academica): "Universidad Privada Antenor Orrego", "Ministerio de Salud", "Colegio de Ingenieros", "SINEACE".
+        REGLA DE ORO: Clasifica la información estrictamente entre competencias técnicas reales y datos institucionales.
+        - SÍ Incluye en competencias_tecnicas / entidades_clave: Conceptos técnicos, lenguajes, herramientas o metodologías. Ejemplos: "Python", "AWS", "BPMN", "Deep Learning", "Sistemas de Información", "Cálculo Diferencial".
+        - NO Incluyas (Mover a formacion_academica): Nombres de instituciones, ciudades o cargos administrativos. Ejemplos: "Universidad Privada Antenor Orrego", "Ministerio de Salud", "Colegio de Ingenieros", "SINEACE", "UPAO".
         PROHIBICIÓN: No uses lenguaje vago. Si no hay dato, escribe "[Información No Declarada]".
-        Formato JSON:
-        {
-            "nombre": "string",
-            "email": "string",
-            "grado": "string",
-            "competencias_tecnicas": "string",
-            "experiencia_docente": "string",
-            "formacion_academica": "string",
-            "entidades_clave": ["string", "string"]
-        }
+        Formato JSON: { "nombre": "string", "email": "string", "grado": "string", "competencias_tecnicas": "string", "experiencia_docente": "string", "formacion_academica": "string", "entidades_clave": ["string", "string"] }
         """
 
         import time
