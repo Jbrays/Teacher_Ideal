@@ -1,136 +1,134 @@
 <template>
-  <div class="min-h-screen bg-surface">
+  <div class="min-h-screen bg-background flex flex-col antialiased">
 
-    <!-- Header Fijo -->
-    <header class="sticky top-0 z-50 w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between">
-      <button
-        @click="goBack"
-        class="w-10 h-10 flex items-center justify-center rounded-full bg-surface hover:bg-surface-dim text-on-surface transition"
-      >
-        ←
-      </button>
-
-      <h1 class="text-lg font-semibold text-on-surface">
-        Recomendaciones – {{ cursoNombre }}
-      </h1>
-
-      <button
-        @click="$router.push('/settings')"
-        class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container text-primary hover:bg-surface-dim transition shadow-sm"
-      >
-        ⚙️
-      </button>
+    <!-- TopAppBar Mobile (Visible on Mobile Only) -->
+    <header class="md:hidden flex justify-between items-center px-margin-mobile h-16 w-full fixed top-0 left-0 z-50 bg-surface text-primary border-b border-surface-container-high shadow-sm transition-colors">
+      <div class="flex items-center gap-4">
+        <button @click="goBack" aria-label="Back" class="material-symbols-outlined text-on-surface hover:bg-surface-variant/50 p-2 rounded-full transition-colors cursor-pointer active:scale-95">arrow_back</button>
+        <h1 class="font-title-lg text-title-lg font-bold text-primary">Vektora</h1>
+      </div>
+      <div class="flex items-center gap-2">
+        <button @click="$router.push('/settings')" aria-label="Settings" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-variant/50 p-2 rounded-full transition-colors cursor-pointer active:scale-95">settings</button>
+      </div>
     </header>
 
-    <!-- Content -->
-    <div class="max-w-4xl mx-auto px-6 py-10">
-
-      <!-- Loading -->
-      <div v-if="loading" class="flex flex-col items-center py-20 gap-4">
-        <div class="w-12 h-12 border-4 border-gray-300 border-t-indigo-500 rounded-full animate-spin"></div>
-        <p class="text-gray-600">Analizando perfiles...</p>
-      </div>
-
-      <!-- Sin recomendaciones -->
-      <div v-else-if="!recommendations.length" class="text-center mt-20 text-outline">
-        <h2 class="text-xl font-semibold mb-3">No hay recomendaciones</h2>
-        <p>Revisa los datos procesados o selecciona otro curso.</p>
-      </div>
-
-      <!-- Lista -->
-      <div v-else class="flex flex-col gap-6">
-
-        <div
-          v-for="(docente, index) in recommendationsSorted"
-          :key="index"
-          class="bg-white p-6 md:p-8 rounded-28px shadow-sm hover:shadow-md transition-shadow border border-transparent hover:border-surface-dim"
-        >
-
-          <!-- Top row -->
-          <div class="flex items-center justify-between">
-
-            <!-- Rank badge -->
-            <div
-              class="w-12 h-12 flex items-center justify-center rounded-full text-white font-semibold shadow"
-              :class="rankColor(index)"
-            >
-              #{{ index + 1 }}
+    <!-- Main Content Canvas -->
+    <main class="flex-1 w-full pt-16 md:pt-0 min-h-screen bg-background">
+      <div class="px-margin-mobile md:px-margin-desktop py-8 md:py-12">
+        
+        <!-- Page Header -->
+        <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 md:mb-12">
+          <div>
+            <div class="flex items-center gap-2 mb-4 md:hidden">
+              <button @click="goBack" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-variant p-2 -ml-2 rounded-full transition-colors">arrow_back</button>
+              <span class="font-label-lg text-label-lg text-on-surface-variant">Volver</span>
             </div>
-
-            <div class="flex-1 px-6">
-              <h3 class="text-lg font-semibold text-on-surface">
-                {{ docente.nombre }}
-              </h3>
-
-              <p class="text-outline text-sm">{{ docente.email || 'Sin email' }}</p>
-              <p class="text-primary text-sm font-medium mt-1">
-                {{ docente.grado || "Sin grado académico" }}
-              </p>
-              <div class="mt-2 flex flex-wrap items-center gap-2">
-                <span 
-                  class="px-3 py-1 text-xs font-semibold rounded-full border"
-                  :class="{
-                    'bg-green-50 text-green-700 border-green-200': docente.confianza_etiqueta === 'Confianza Muy Alta',
-                    'bg-blue-50 text-blue-700 border-blue-200': docente.confianza_etiqueta === 'Confianza Alta',
-                    'bg-yellow-50 text-yellow-700 border-yellow-200': docente.confianza_etiqueta === 'Confianza Media',
-                    'bg-red-50 text-red-700 border-red-200': docente.confianza_etiqueta === 'Confianza Baja'
-                  }"
-                >
-                  {{ docente.confianza_etiqueta }}
-                </span>
-                <span class="px-3 py-1 bg-surface-container text-outline text-xs font-semibold rounded-full border border-surface-dim" title="Rendimiento respecto al primer puesto">
-                  Match Relativo: {{ docente.score_relativo }}%
-                </span>
+            <div class="hidden md:flex items-center gap-2 mb-6">
+              <button @click="goBack" class="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors group">
+                <span class="material-symbols-outlined group-hover:-translate-x-1 transition-transform">arrow_back</span>
+                <span class="font-label-lg text-label-lg">Volver</span>
+              </button>
+            </div>
+            <div class="flex items-center gap-3 mb-2">
+              <h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-background uppercase">RANKING DE DOCENTES</h2>
+              <div v-if="isProcessingBackground" class="flex items-center group relative cursor-help" title="El sistema sigue procesando nuevos documentos en segundo plano. Los resultados actuales podrían cambiar.">
+                <span class="material-symbols-outlined animate-spin text-primary opacity-80 text-2xl">sync</span>
               </div>
             </div>
-
-            <!-- Botón de purga (Derecho al olvido) -->
+            <p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl uppercase">{{ cursoNombre }}</p>
+          </div>
+          <div class="flex items-center gap-3">
             <button 
-              @click="handleDelete(docente)" 
-              class="mr-4 text-red-600 hover:text-white bg-red-50 hover:bg-red-600 px-4 py-2 rounded-full transition-colors text-xs font-semibold flex items-center gap-1 border border-red-100"
-              title="Derecho al Olvido: Purgar perfil y vectores"
+              @click="handleExportPdf" 
+              :disabled="exportingPdf || loading || !recommendations.length" 
+              class="flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-full hover:opacity-90 disabled:opacity-50 transition-colors shadow-sm"
             >
-              🗑️ Purgar
+              <span v-if="exportingPdf" class="material-symbols-outlined animate-spin text-[20px]">refresh</span>
+              <span v-else class="material-symbols-outlined text-[20px]">picture_as_pdf</span>
+              <span class="font-label-lg text-label-lg">{{ exportingPdf ? 'Generando PDF...' : 'Exportar a PDF' }}</span>
             </button>
+          </div>
+        </div>
 
-            <!-- Score circle -->
-            <div class="relative flex items-center justify-center">
-              <div
-                class="w-20 h-20 rounded-full flex items-center justify-center font-bold text-primary"
-                :style="circleStyle(docente.score_combinado)"
-              >
-                <div class="absolute w-16 h-16 bg-white rounded-full flex items-center justify-center text-lg">
-                  {{ Math.round(docente.score_combinado) }}%
+        <!-- Loading -->
+        <div v-if="loading" class="flex flex-col items-center justify-center py-20 gap-4">
+          <span class="material-symbols-outlined animate-spin text-primary text-4xl">sync</span>
+          <p class="font-body-lg text-on-surface-variant">Analizando perfiles de docentes e invocando XAI...</p>
+        </div>
+
+        <!-- Sin recomendaciones -->
+        <div v-else-if="!recommendations.length" class="bg-surface rounded-[28px] p-12 text-center border border-surface-container-highest shadow-sm">
+          <span class="material-symbols-outlined text-6xl text-outline-variant mb-4">search_off</span>
+          <h2 class="font-title-lg text-title-lg text-on-surface mb-2 uppercase">NO HAY RECOMENDACIONES</h2>
+          <p class="font-body-md text-body-md text-on-surface-variant">Revisa los datos procesados o selecciona otro curso.</p>
+        </div>
+
+        <!-- Bento Grid Layout for Teachers -->
+        <div v-else class="grid grid-cols-1 xl:grid-cols-2 gap-gutter-desktop">
+          
+          <div 
+            v-for="(docente, index) in recommendationsSorted" 
+            :key="docente.docente_id"
+            class="bg-surface rounded-[28px] p-6 shadow-[0px_2px_8px_rgba(0,0,0,0.05)] border border-surface-container-highest hover:shadow-md transition-shadow relative overflow-hidden group flex flex-col h-full"
+          >
+            <!-- Subtle gradient background for top rank -->
+            <div v-if="index === 0" class="absolute top-0 right-0 w-64 h-64 bg-primary-container/20 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+            
+            <div class="flex justify-between items-start mb-6 relative z-10">
+              <div class="flex items-center gap-4">
+                <span class="font-display-lg text-display-lg font-black text-outline-variant opacity-40 w-12 text-center">{{ index + 1 }}</span>
+                <div class="w-16 h-16 rounded-full bg-surface-container overflow-hidden border-2 border-surface flex-shrink-0 flex items-center justify-center text-primary-container">
+                  <span class="material-symbols-outlined text-3xl">person</span>
+                </div>
+                <div>
+                  <h3 class="font-title-lg text-title-lg text-on-surface mb-1 capitalize">{{ docente.nombre ? docente.nombre.toLowerCase() : '' }}</h3>
                 </div>
               </div>
+              <div class="flex flex-col items-end gap-2">
+                <div :class="index === 0 ? 'bg-primary/10 text-primary' : 'bg-surface-container-high text-on-surface'" class="px-4 py-2 rounded-full font-title-md text-title-md font-bold flex items-center gap-2">
+                  <span v-if="index === 0" class="material-symbols-outlined fill text-sm">trophy</span>
+                  {{ Math.round(docente.score_combinado) }}%
+                </div>
+                <button @click="handleDelete(docente)" aria-label="Borrar datos de docente" class="text-error hover:bg-error-container/50 p-2 rounded-full transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100" title="Derecho al Olvido: Purgar datos de este docente">
+                  <span class="material-symbols-outlined">delete</span>
+                </button>
+              </div>
             </div>
 
-          </div>
-
-          <!-- Divider -->
-          <div class="w-full h-px bg-surface-container my-6"></div>
-
-          <!-- XAI Intrínseca -->
-          <div v-if="docente.xai_explanations" 
-               class="mb-6 p-5 bg-surface rounded-2xl border border-surface-dim">
-            <h4 class="text-sm font-bold text-on-surface mb-3">Auditoría del Emparejamiento</h4>
-            <div class="text-sm text-outline whitespace-pre-wrap leading-relaxed">
-              {{ docente.xai_explanations }}
+            <!-- Etiquetas de Confianza y Tecnologías -->
+            <div class="flex flex-wrap gap-2 mb-4 relative z-10">
+              <span 
+                class="px-3 py-1 font-label-md text-label-md rounded-[8px] border"
+                :class="{
+                  'bg-green-50 text-green-700 border-green-200': docente.confianza_etiqueta === 'Confianza Muy Alta',
+                  'bg-blue-50 text-blue-700 border-blue-200': docente.confianza_etiqueta === 'Confianza Alta',
+                  'bg-yellow-50 text-yellow-700 border-yellow-200': docente.confianza_etiqueta === 'Confianza Media',
+                  'bg-red-50 text-red-700 border-red-200': docente.confianza_etiqueta === 'Confianza Baja'
+                }"
+              >
+                {{ docente.confianza_etiqueta }}
+              </span>
             </div>
-          </div>
+            
+            <div v-if="docente.evidencias?.entidades_clave?.length" class="flex flex-wrap gap-2 mb-6 relative z-10">
+              <span
+                v-for="e in docente.evidencias.entidades_clave.slice(0, 5)"
+                :key="e"
+                class="px-2 py-1 rounded-[8px] bg-surface-container text-on-surface-variant font-label-md text-label-md"
+              >
+                {{ e }}
+              </span>
+              <span v-if="docente.evidencias.entidades_clave.length > 5" class="px-2 py-1 rounded-[8px] bg-surface-container text-on-surface-variant font-label-md text-label-md">...</span>
+            </div>
 
-          <!-- Detalles de Entidades (Extracción dura) -->
-          <div class="space-y-3 text-sm mt-2">
-            <div v-if="docente.evidencias?.entidades_clave?.length">
-              <p class="font-medium text-outline mb-3">Tecnologías y conceptos en común con el sílabo:</p>
-              <div class="flex flex-wrap gap-2">
-                <span
-                  v-for="e in docente.evidencias.entidades_clave"
-                  :key="e"
-                  class="px-4 py-1.5 rounded-lg bg-surface-container text-on-surface text-xs font-medium border border-surface-dim"
-                >
-                  {{ e }}
-                </span>
+            <!-- XAI Section -->
+            <div class="mt-auto pt-4 border-t border-surface-container-high relative z-10 flex-grow flex flex-col">
+              <label class="font-label-md text-label-md text-on-surface-variant mb-2 flex items-center gap-2">
+                <span class="material-symbols-outlined text-[18px]">psychiatry</span>
+                Motivos
+              </label>
+              <div class="w-full bg-surface-container-lowest border border-outline-variant rounded-xl p-4 font-body-md text-body-md text-on-surface overflow-y-auto max-h-[150px] leading-relaxed whitespace-pre-wrap">
+                {{ docente.xai_explanations || 'No hay explicaciones disponibles para este perfil.' }}
               </div>
             </div>
           </div>
@@ -138,17 +136,15 @@
         </div>
 
       </div>
-
-    </div>
-
+    </main>
   </div>
 </template>
 
 <script>
 import { useAppStore } from "../store/app";
 import { useRouter, useRoute } from "vue-router";
-import { computed, onMounted, ref } from "vue";
-import { deleteDocente } from "../services/api";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { deleteDocente, fetchSystemStatus, exportCursoRecommendationsPdf } from "../services/api";
 
 export default {
   name: "RecommendationsView",
@@ -158,6 +154,9 @@ export default {
     const router = useRouter();
     const route = useRoute();
     const loading = ref(true);
+    const isProcessingBackground = ref(false);
+    const exportingPdf = ref(false);
+    let pollInterval = null;
 
     // Obtener el cursoId de la URL
     const cursoId = route.params.cursoId;
@@ -204,6 +203,18 @@ export default {
       }
       
       loading.value = false;
+
+      // Iniciar polling
+      const checkStatus = async () => {
+        const status = await fetchSystemStatus();
+        isProcessingBackground.value = status.is_processing;
+      };
+      checkStatus(); // Primera llamada inmediata
+      pollInterval = setInterval(checkStatus, 3000); // Poll cada 3s
+    });
+
+    onUnmounted(() => {
+      if (pollInterval) clearInterval(pollInterval);
     });
 
     const goBack = () => {
@@ -231,15 +242,29 @@ export default {
       }
     };
 
+    const handleExportPdf = async () => {
+      exportingPdf.value = true;
+      try {
+        await exportCursoRecommendationsPdf(cursoId, store.currentCursoNombre);
+      } catch (error) {
+        alert("Error exportando PDF: " + error.message);
+      } finally {
+        exportingPdf.value = false;
+      }
+    };
+
     return {
       cursoNombre: computed(() => store.currentCursoNombre),
       recommendations: computed(() => store.recommendations),
       recommendationsSorted,
       loading,
+      isProcessingBackground,
+      exportingPdf,
       rankColor,
       circleStyle,
       goBack,
       handleDelete,
+      handleExportPdf,
       getSortedShapValues: (shapExplanations) => {
         if (!shapExplanations || typeof shapExplanations !== 'object') return {};
         

@@ -1,0 +1,54 @@
+substitutions:
+  _AR_HOSTNAME: us-central1-docker.pkg.dev
+  _AR_PROJECT_ID: semilleros-493300
+  _AR_REPOSITORY: teacher-ideal
+  _SERVICE_NAME: vektora
+  _DEPLOY_REGION: us-central1
+  _ADMIN_EMAILS: jsantillana3@upao.edu.pe
+
+steps:
+  # 1. Build de la imagen Docker del backend
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--no-cache'
+      - '-t'
+      - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$COMMIT_SHA'
+      - '.'
+      - '-f'
+      - 'Dockerfile'
+
+  # 2. Push a Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$COMMIT_SHA'
+
+  # 3. Deploy a Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '$_SERVICE_NAME'
+      - '--image=$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$COMMIT_SHA'
+      - '--region=$_DEPLOY_REGION'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--project=$PROJECT_ID'
+      - '--set-secrets=DATABASE_URL=database-url:latest,FIREBASE_CREDENTIALS_JSON=firebase-credentials-json:latest'
+      - '--set-env-vars=ADMIN_EMAILS=$_ADMIN_EMAILS,CHROMA_DB_PATH=/tmp/chroma_db,GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+      - '--memory=4Gi'
+      - '--cpu=2'
+      - '--concurrency=80'
+      - '--max-instances=20'
+      - '--timeout=3600'
+      - '--no-cpu-throttling'
+      - '--cpu-boost'
+      - '--startup-probe=periodSeconds=240,timeoutSeconds=240,failureThreshold=1,tcpSocket.port=8080'
+
+images:
+  - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$COMMIT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

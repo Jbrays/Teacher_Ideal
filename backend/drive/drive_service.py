@@ -27,7 +27,7 @@ class DriveService:
             self.service = build('drive', 'v3', credentials=credentials)
             return True
         except Exception as e:
-            logger.error(f"Error construyendo servicio Drive: {e}")
+            logger.error(f"Error construyendo servicio Drive: {e}", exc_info=True)
             return False
     
     def list_folders(self, parent_id: Optional[str] = None, max_results: int = 100) -> List[Dict[str, Any]]:
@@ -62,10 +62,10 @@ class DriveService:
             return folders
             
         except HttpError as e:
-            logger.error(f"Error listando carpetas: {e}")
+            logger.error(f"Error listando carpetas: {e}", exc_info=True)
             return []
         except Exception as e:
-            logger.error(f"Error inesperado listando carpetas: {e}")
+            logger.error(f"Error inesperado listando carpetas: {e}", exc_info=True)
             return []
     
     def list_files_in_folder(self, folder_id: str, file_types: Optional[List[str]] = None, recursive: bool = True) -> List[Dict[str, Any]]:
@@ -140,7 +140,7 @@ class DriveService:
             logger.error(f"❌ Error listando archivos (HTTP): {e}")
             raise Exception(f"Error de permisos o conexión con Drive: {e}")
         except Exception as e:
-            logger.error(f"❌ Error inesperado listando archivos: {e}")
+            logger.error(f"❌ Error inesperado listando archivos: {e}", exc_info=True)
             raise Exception(f"Error inesperado al leer Drive: {e}")
     
     def get_file_metadata(self, file_id: str) -> Optional[Dict[str, Any]]:
@@ -165,10 +165,10 @@ class DriveService:
             return file
             
         except HttpError as e:
-            logger.error(f"❌ Error obteniendo metadata: {e}")
+            logger.error(f"❌ Error obteniendo metadata: {e}", exc_info=True)
             return None
         except Exception as e:
-            logger.error(f"❌ Error inesperado obteniendo metadata: {e}")
+            logger.error(f"❌ Error inesperado obteniendo metadata: {e}", exc_info=True)
             return None
     
     def download_file(self, file_id: str) -> Optional[bytes]:
@@ -199,7 +199,7 @@ class DriveService:
             logger.error(f"❌ Error descargando archivo (HTTP): {e}")
             return None
         except Exception as e:
-            logger.error(f"❌ Error inesperado descargando archivo: {e}")
+            logger.error(f"❌ Error inesperado descargando archivo: {e}", exc_info=True)
             return None
     
     def search_files(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
@@ -231,10 +231,10 @@ class DriveService:
             return files
             
         except HttpError as e:
-            logger.error(f"❌ Error buscando archivos: {e}")
+            logger.error(f"❌ Error buscando archivos: {e}", exc_info=True)
             return []
         except Exception as e:
-            logger.error(f"❌ Error inesperado buscando archivos: {e}")
+            logger.error(f"❌ Error inesperado buscando archivos: {e}", exc_info=True)
             return []
 
 
@@ -258,7 +258,7 @@ class DriveService:
             logger.error(f"❌ Error descarga thread-safe (Timeout de 30s): {e}")
             return None
         except Exception as e:
-            logger.error(f"❌ Error descarga thread-safe: {e}")
+            logger.error(f"❌ Error descarga thread-safe: {e}", exc_info=True)
             return None
 
     def register_webhook(self, folder_id: str, webhook_url: str, channel_id: str) -> Optional[Dict[str, Any]]:
@@ -284,10 +284,10 @@ class DriveService:
             return response
             
         except HttpError as e:
-            logger.error(f"❌ Error registrando webhook: {e}")
+            logger.error(f"❌ Error registrando webhook: {e}", exc_info=True)
             return None
         except Exception as e:
-            logger.error(f"❌ Error inesperado registrando webhook: {e}")
+            logger.error(f"❌ Error inesperado registrando webhook: {e}", exc_info=True)
             return None
 
 

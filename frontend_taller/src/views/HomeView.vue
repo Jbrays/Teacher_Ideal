@@ -1,41 +1,70 @@
 <template>
-  <div class="min-h-screen bg-surface">
-
-    <!-- Header -->
-    <header class="w-full bg-white shadow-sm py-4 px-6 flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-on-surface">
-        Hola, {{ userName }}
-      </h1>
-
-      <button
-        @click="$router.push('/settings')"
-        class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container text-primary hover:bg-surface-dim transition shadow-sm"
-      >
-        ⚙️
-      </button>
-    </header>
-
-    <!-- Contenido -->
-    <div class="max-w-3xl mx-auto px-6 py-20 text-center">
-
-      <!-- Mensaje de bienvenida simple -->
-      <div class="animate-fadeIn bg-white p-10 rounded-28px shadow-sm">
-        <h2 class="text-3xl font-bold text-on-surface mb-4">
-          Vektora
-        </h2>
-
-        <p class="text-outline text-lg mb-8 leading-relaxed">
-          Sistema de Análisis de Talento Docente impulsado por IA. Mapeo semántico y recomendación de perfiles.
-        </p>
-
-        <p class="text-outline text-sm">
-          Si aún no has configurado tus repositorios de datos, ve a los 
-          <span class="inline-flex items-center gap-1 text-primary font-medium">
-            ajustes ⚙️
-          </span>
-        </p>
-      </div>
-
+  <div class="bg-background text-on-background min-h-screen flex overflow-hidden selection:bg-primary-container selection:text-on-primary-container">
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col h-screen overflow-hidden bg-background">
+      <!-- TopAppBar (Shared Component) -->
+      <header class="w-full z-10 sticky top-0 bg-surface border-b-0 shadow-none">
+        <div class="flex justify-between items-center px-margin-mobile md:px-margin-desktop h-16 w-full">
+          <!-- Brand -->
+          <div class="flex items-center gap-4 text-primary">
+            <div class="w-10 h-10 rounded-xl bg-primary-container text-on-primary-container flex items-center justify-center">
+              <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">deployed_code</span>
+            </div>
+            <span class="font-title-lg text-title-lg font-bold">Vektora</span>
+          </div>
+          <!-- Empty spacer for desktop to push actions right -->
+          <div class="hidden md:block flex-1"></div>
+          <!-- Trailing Actions & Profile -->
+          <div class="flex items-center gap-6">
+            <!-- User Greeting -->
+            <div class="hidden sm:flex flex-col items-end justify-center">
+              <span class="font-label-lg text-label-lg text-on-surface">Hola, {{ userName }}</span>
+            </div>
+            <!-- Settings Action -->
+            <button @click="$router.push('/settings')" class="flex items-center gap-2 text-on-surface-variant hover:bg-surface-variant/50 px-3 py-2 rounded-full cursor-pointer active:scale-95 transition-all">
+              <span class="material-symbols-outlined">settings</span>
+              <span class="font-label-lg text-label-lg hidden md:block">Configuración</span>
+            </button>
+            <!-- Profile Avatar -->
+            <div class="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity text-on-secondary-container">
+              <span class="material-symbols-outlined">person</span>
+            </div>
+          </div>
+        </div>
+      </header>
+      
+      <!-- Canvas (Dashboard Empty State) -->
+      <main class="flex-1 overflow-y-auto p-gutter-mobile md:p-margin-desktop flex items-center justify-center relative">
+        <!-- Background Decorative Blob (Subtle) -->
+        <div class="absolute inset-0 z-0 flex items-center justify-center opacity-30 pointer-events-none">
+          <div class="w-[600px] h-[600px] bg-primary-container rounded-full blur-[120px] mix-blend-multiply"></div>
+          <div class="w-[500px] h-[500px] bg-tertiary-container rounded-full blur-[100px] mix-blend-multiply absolute translate-x-32 -translate-y-16"></div>
+        </div>
+        <!-- Empty State Content Container -->
+        <div class="relative z-10 max-w-2xl w-full flex flex-col items-center text-center p-12">
+          <!-- Illustrative Icon -->
+          <div class="w-32 h-32 mb-8 rounded-full bg-surface-container-high flex items-center justify-center shadow-[0px_2px_8px_rgba(0,0,0,0.05)] border border-outline-variant/30">
+            <span class="material-symbols-outlined text-6xl text-primary" style="font-variation-settings: 'FILL' 0, 'wght' 200;">deployed_code</span>
+          </div>
+          <!-- Text Content -->
+          <h2 class="font-display-lg text-display-lg md:text-5xl font-light text-on-surface tracking-tight mb-4 uppercase">
+            <div class="flex items-center justify-center gap-4">
+              BIENVENIDO AL PORTAL ACADÉMICO
+              <div v-if="isProcessingBackground" class="flex items-center group relative cursor-help" title="El sistema sigue procesando nuevos documentos en segundo plano.">
+                <span class="material-symbols-outlined animate-spin text-primary opacity-80 text-4xl">sync</span>
+              </div>
+            </div>
+          </h2>
+          <p class="font-body-lg text-body-lg text-on-surface-variant max-w-lg mb-10 leading-relaxed">
+            Tu espacio de trabajo está listo. Aún no hay datos en tu panel principal. Ve a la configuración para comenzar a procesar tus documentos y establecer tus ciclos académicos.
+          </p>
+          <!-- Primary Action Button -->
+          <button @click="$router.push('/settings')" class="group flex items-center gap-3 bg-primary hover:bg-primary/90 text-on-primary px-8 py-4 rounded-full font-label-lg text-label-lg shadow-[0px_4px_12px_rgba(53,37,205,0.2)] transition-all active:scale-95">
+            <span class="material-symbols-outlined transition-transform group-hover:rotate-90">settings</span>
+            Ir a Configuración
+          </button>
+        </div>
+      </main>
     </div>
   </div>
 </template>
@@ -44,7 +73,8 @@
 import { auth } from "../services/firebase";
 import { useAppStore } from "../store/app";
 import { useRouter } from "vue-router";
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
+import { fetchSystemStatus } from "../services/api";
 
 export default {
   name: "HomeView",
@@ -53,6 +83,20 @@ export default {
     const store = useAppStore();
     const router = useRouter();
     const userName = ref("Usuario");
+    const isProcessingBackground = ref(false);
+
+    let pollingInterval = null;
+
+    const checkSystemStatus = async () => {
+      try {
+        const status = await fetchSystemStatus();
+        if (status) {
+          isProcessingBackground.value = status.is_processing;
+        }
+      } catch (error) {
+        console.error("Error cargando datos:", error);
+      }
+    };
 
     onMounted(async () => {
       // El usuario ya está autenticado (verificado por el router guard)
@@ -84,17 +128,12 @@ export default {
 
     return {
       userName,
+      isProcessingBackground,
     };
   },
 };
 </script>
 
 <style scoped>
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.animate-fadeIn {
-  animation: fadeIn 0.4s ease-out;
-}
+/* Scoped styles are handled by tailwind classes and global CSS */
 </style>

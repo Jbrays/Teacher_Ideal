@@ -1,8 +1,8 @@
 export default {
-  apiKey: "AIzaSyCdNacVMEquF_e9rv4zbs-IDHW8Vs_S9is",
-  authDomain: "semilleros-493300.firebaseapp.com",
-  projectId: "semilleros-493300",
-  storageBucket: "semilleros-493300.firebasestorage.app",
-  messagingSenderId: "121734839794",
-  appId: "1:121734839794:web:b7c6d9aa5307fa6d7cbf6b",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };

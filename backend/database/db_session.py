@@ -16,7 +16,7 @@ if not DATABASE_URL:
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    pool_recycle=300
+    pool_recycle=600
 )
 
 # Crear SessionLocal
@@ -40,4 +40,4 @@ def init_db():
         Base.metadata.create_all(bind=engine)
         logger.info("Base de datos inicializada")
     except Exception as e:
-        logger.warning(f"⚠️ Advertencia: Error conectando a la base de datos en el arranque. El servidor iniciará, pero las operaciones a DB fallarán: {e}")
+        logger.warning(f"⚠️ Advertencia: Error conectando a la base de datos en el arranque. El servidor iniciará, pero las operaciones a DB fallarán: {e}", exc_info=True)

@@ -10,8 +10,11 @@ import hashlib
 
 logger = logging.getLogger(__name__)
 
-# Configuración de ChromaDB (usamos /tmp/ porque Cloud Run tiene el resto del disco en solo-lectura)
-BASE_DIR = Path("/tmp/chroma_db")
+# Configuración de ChromaDB
+# Por defecto usa /tmp/ porque Cloud Run tiene el resto del disco en solo-lectura.
+# En producción se recomienda montar un volumen persistente (Cloud Storage FUSE / NFS)
+# y apuntar CHROMA_DB_PATH a esa ruta para no perder los embeddings entre reinicios.
+BASE_DIR = Path(os.getenv("CHROMA_DB_PATH", "/tmp/chroma_db"))
 BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 class EmbeddingsManager:
@@ -21,9 +24,11 @@ class EmbeddingsManager:
             # Usar distancia Coseno en la base de datos
             self.docentes_collection = self.client.get_or_create_collection(name="docentes", metadata={"hnsw:space": "cosine"})
             self.cursos_collection = self.client.get_or_create_collection(name="cursos", metadata={"hnsw:space": "cosine"})
-            self.entidades_collection = self.client.get_or_create_collection(name="entidades_global", metadata={"hnsw:space": "cosine"})
+            # Colecciones separadas por el Asymmetric Prompting
+            self.entidades_curso_collection = self.client.get_or_create_collection(name="entidades_curso", metadata={"hnsw:space": "cosine"})
+            self.entidades_docente_collection = self.client.get_or_create_collection(name="entidades_docente", metadata={"hnsw:space": "cosine"})
         except Exception as e:
-            logger.error(f"Error inicializando ChromaDB: {e}")
+            logger.error(f"Error inicializando ChromaDB: {e}", exc_info=True)
             self.client = None
 
     def _generate_hash(self, text: str) -> str:
@@ -52,7 +57,7 @@ class EmbeddingsManager:
                         vector = vector.reshape(1, -1)
                     return vector
         except Exception as e:
-            logger.error(f"Error consultando ChromaDB para {item_id}: {e}")
+            logger.error(f"Error consultando ChromaDB para {item_id}: {e}", exc_info=True)
 
         # Si no existe o el hash cambió, generar nuevo embedding
         new_vector = embedding_generator(current_text)
@@ -70,12 +75,12 @@ class EmbeddingsManager:
                 documents=[current_text]
             )
         except Exception as e:
-            logger.error(f"Error guardando en ChromaDB para {item_id}: {e}")
+            logger.error(f"Error guardando en ChromaDB para {item_id}: {e}", exc_info=True)
             
         db_item.embedding_hash = current_hash
         return new_vector
 
-    def get_entity_embeddings(self, entities: List[str], embedding_generator: Callable) -> Dict[str, np.ndarray]:
+    def get_entity_embeddings(self, entities: List[str], embedding_generator: Callable, is_curso: bool = False) -> Dict[str, np.ndarray]:
         if not self.client:
             raise Exception("ChromaDB no está inicializado")
         
@@ -91,8 +96,10 @@ class EmbeddingsManager:
         missing_entities = []
         missing_ids = []
         
+        target_collection = self.entidades_curso_collection if is_curso else self.entidades_docente_collection
+        
         try:
-            result = self.entidades_collection.get(ids=entity_ids, include=["embeddings"])
+            result = target_collection.get(ids=entity_ids, include=["embeddings"])
             if result and result.get("embeddings"):
                 for i, doc_id in enumerate(result["ids"]):
                     try:
@@ -105,7 +112,7 @@ class EmbeddingsManager:
                     except ValueError:
                         pass
         except Exception as e:
-            logger.error(f"Error consultando ChromaDB entidades: {e}")
+            logger.error(f"Error consultando ChromaDB entidades: {e}", exc_info=True)
             
         for ent, ent_id in zip(entities, entity_ids):
             if ent not in result_map:
@@ -113,19 +120,22 @@ class EmbeddingsManager:
                 missing_ids.append(ent_id)
                 
         if missing_entities:
-            for ent, ent_id in zip(missing_entities, missing_ids):
+            flat_new_vectors = []
+            for ent in missing_entities:
                 vec = embedding_generator(ent)
                 result_map[ent] = vec
-                
-                flat_vec = vec.flatten().tolist()
+                flat_new_vectors.append(vec.flatten().tolist())
+            
+            for i, ent in enumerate(missing_entities):
                 try:
-                    self.entidades_collection.upsert(
-                        ids=[ent_id],
-                        embeddings=[flat_vec],
+                    target_collection.upsert(
+                        ids=[missing_ids[i]],
+                        embeddings=[flat_new_vectors[i]],
+                        metadatas=[{"text": ent}],
                         documents=[ent]
                     )
                 except Exception as e:
-                    logger.error(f"Error guardando entidad en ChromaDB: {e}")
+                    logger.error(f"Error guardando entidad {ent} en ChromaDB: {e}", exc_info=True)
                     
         return result_map
 
@@ -143,7 +153,7 @@ class EmbeddingsManager:
                 if not docente.embedding_hash:
                     needs_commit = True
             except Exception as e:
-                logger.error(f"Error generando embedding para docente {docente.id}: {e}")
+                logger.error(f"Error generando embedding para docente {docente.id}: {e}", exc_info=True)
                 
         if needs_commit:
             try:
@@ -159,7 +169,7 @@ class EmbeddingsManager:
             self.docentes_collection.delete(ids=[f"docente_{docente_id}"])
             logger.info(f"Vector semántico del docente {docente_id} destruido exitosamente de ChromaDB.")
         except Exception as e:
-            logger.error(f"Error destruyendo vector del docente {docente_id}: {e}")
+            logger.error(f"Error destruyendo vector del docente {docente_id}: {e}", exc_info=True)
 
     def clear_cache(self, item_type: str = "all") -> int:
         count = 0
@@ -174,7 +184,7 @@ class EmbeddingsManager:
                 self.cursos_collection = self.client.get_or_create_collection(name="cursos", metadata={"hnsw:space": "cosine"})
                 count += 1
         except Exception as e:
-            logger.error(f"Error limpiando colecciones: {e}")
+            logger.error(f"Error limpiando colecciones: {e}", exc_info=True)
         return count
 
 embeddings_manager = EmbeddingsManager()

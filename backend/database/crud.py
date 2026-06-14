@@ -76,18 +76,30 @@ def update_curso(db: Session, curso_id: int, **kwargs) -> Optional[Curso]:
     return curso
 
 
-def create_historial(db: Session, docente_id: int, curso_id: int, periodo: str, **kwargs) -> Historial:
-    historial = Historial(docente_id=docente_id, curso_id=curso_id, periodo=periodo, **kwargs)
-    db.add(historial)
+def upsert_historial(db: Session, nombre_docente: str, nombre_curso: str, periodo: str) -> Historial:
+    historial = db.query(Historial).filter(
+        Historial.nombre_docente == nombre_docente,
+        Historial.nombre_curso == nombre_curso
+    ).first()
+    
+    if historial:
+        historial.veces += 1
+        historial.ultima_vez = periodo
+    else:
+        historial = Historial(
+            nombre_docente=nombre_docente,
+            nombre_curso=nombre_curso,
+            veces=1,
+            ultima_vez=periodo
+        )
+        db.add(historial)
+        
     db.commit()
     db.refresh(historial)
     return historial
 
-def get_historial_by_docente(db: Session, docente_id: int) -> List[Historial]:
-    return db.query(Historial).filter(Historial.docente_id == docente_id).all()
-
-def get_historial_by_curso(db: Session, curso_id: int) -> List[Historial]:
-    return db.query(Historial).filter(Historial.curso_id == curso_id).all()
+def get_all_historiales(db: Session) -> List[Historial]:
+    return db.query(Historial).all()
 
 
 def create_recomendacion(db: Session, curso_id: int, docente_id: int, score: float, confidence: float, explanations: list) -> Recomendacion:
@@ -118,6 +130,17 @@ def create_webhook_log(db: Session, drive_file_id: str, evento_tipo: str, entida
     db.refresh(log)
     return log
 
+def update_webhook_log_status(db: Session, drive_file_id: str, status: str) -> Optional[WebhookLog]:
+    log = db.query(WebhookLog).filter(WebhookLog.drive_file_id == drive_file_id).order_by(WebhookLog.timestamp.desc()).first()
+    if log:
+        log.status = status
+        db.commit()
+        db.refresh(log)
+    return log
+
+def get_active_processing_count(db: Session) -> int:
+    return db.query(WebhookLog).filter(WebhookLog.status.in_(["received", "processing"])).count()
+
 
 def get_recomendaciones_cache(db: Session, curso_id: int, max_age_days: Optional[int] = 7) -> Optional[List[RecomendacionCache]]:
     query = db.query(RecomendacionCache).filter(RecomendacionCache.curso_id == curso_id)
@@ -135,8 +158,8 @@ def save_recomendaciones_cache(db: Session, curso_id: int, recommendations: List
                 curso_id=curso_id,
                 docente_id=rec['docente_id'],
                 score_combinado=rec.get('score_combinado', 0.0),
-                score_historico=rec.get('score_historico', 0.0),
-                score_semantico=rec.get('score_semantico', 0.0),
+                score_est=rec.get('score_est', 0.0),
+                score_tac=rec.get('score_tac', 0.0),
                 evidencias=rec.get('evidencias', []),
                 shap_explanations=rec.get('shap_explanations', {}),
                 version_algoritmo=version_algoritmo,

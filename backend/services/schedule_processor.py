@@ -6,6 +6,7 @@ import os
 import json
 from typing import List, Dict, Tuple, Optional
 from sqlalchemy.orm import Session
+import concurrent.futures
 
 # Vertex AI Imports
 import vertexai
@@ -40,7 +41,7 @@ class ScheduleProcessor:
             self.model = GenerativeModel(self.model_name)
             logger.info(f"Vertex AI inicializado correctamente con modelo: {self.model_name}")
         except Exception as e:
-            logger.error(f"Error inicializando Vertex AI: {e}")
+            logger.error(f"Error inicializando Vertex AI: {e}", exc_info=True)
             self.model = None
 
     def _extract_periodo_from_filename(self, filename: str) -> str:
@@ -109,46 +110,60 @@ class ScheduleProcessor:
                 
                 logger.info(f"📄 Total páginas: {total_pages} | Batch Size: {batch_size}")
                 
+                # PREPARAR BLOQUES DE TEXTO
+                bloques = []
                 for i in range(0, total_pages, batch_size):
-                    # Construir lote
                     batch_pages = pdf.pages[i : i + batch_size]
                     batch_text = ""
                     for idx, page in enumerate(batch_pages):
                         text = page.extract_text(layout=True) or ""
                         batch_text += f"\n--- PÁGINA {i + idx + 1} ---\n{text}\n"
+                    bloques.append((i // batch_size + 1, batch_text))
                     
-                    logger.info(f"   ⏳ Procesando Batch {i//batch_size + 1}/{(total_pages + batch_size - 1)//batch_size} (Págs {i+1}-{min(i+batch_size, total_pages)})...")
-                    
+                MAX_WORKERS = 5
+                import random
+                import time
+                
+                def _procesar_bloque(batch_idx, batch_text):
                     prompt = f"""
-                    Analiza este TEXTO extraído de varias páginas de un horario universitario.
-                    Extrae TODAS las asignaciones de cursos a docentes.
-                    
-                    TEXTO DEL LOTE:
-                    {batch_text}
-                    
-                    Reglas:
-                    1. Ignora "STAFF" o "DOCENTE" genérico.
-                    2. Extrae estrictamente el CÓDIGO institucional del curso (ej: "ICSI424").
-                    3. Extrae el NOMBRE COMPLETO del docente tal como aparece en el texto.
-                    4. IGNORA el periodo del texto, usaremos uno global.
-                    
-                    Salida JSON (Lista de objetos estricta):
-                    [
-                        {{"curso_codigo": "ICSI424", "docente_nombre": "PEREZ PEREZ, JUAN"}}
-                    ]
-                    """
-                    
-                    # RETRY LOGIC PARA VERTEX AI (429, 503 & JSON Errors)
-                    import random
-                    max_retries = 5 # Aumentado a 5 intentos
+Eres un extractor de datos de horarios universitarios.
+Solo extraes lo que está literalmente en el documento.
+
+ALGORITMO DE LECTURA:
+1. El período académico está en el encabezado del documento. 
+   Captúralo una sola vez y aplícalo a todos los registros.
+2. Por cada curso encuentra: el nombre del curso y el nombre del docente.
+3. Un curso puede aparecer en múltiples líneas. Consolida en un solo 
+   registro por combinación única de docente y curso.
+4. Ignora completamente cualquier fila donde el docente sea "STAFF".
+
+REGLAS:
+- Extrae el nombre del curso tal cual aparece en el documento.
+- Extrae el nombre del docente tal cual aparece en el documento.
+- El período es el código numérico del ciclo académico del encabezado.
+- Si un mismo docente dicta el mismo curso en varias secciones, 
+  es un solo registro.
+- No extraigas NRC, sección, aula, hora, créditos ni ningún otro dato.
+
+Devuelve ÚNICAMENTE este JSON sin prefijos ni etiquetas:
+[
+  {{
+    "nombre_docente": "string",
+    "curso": "string",
+    "periodo": "string"
+  }}
+]
+
+DOCUMENTO:
+{batch_text}
+"""
+                    max_retries = 5
                     for attempt in range(max_retries):
                         try:
-                            # Rate limiting preventivo con Jitter
-                            base_wait = (attempt + 1) * 5
-                            jitter = random.uniform(0, 3)
-                            if attempt > 0: time.sleep(base_wait + jitter)
-                            else: time.sleep(2)
-
+                            # Rate limiting preventivo
+                            if attempt > 0: time.sleep((attempt + 1) * 5 + random.uniform(0, 3))
+                            else: time.sleep(1) # Pequeña pausa inicial
+                            
                             response = self.model.generate_content(
                                 prompt,
                                 generation_config={
@@ -164,43 +179,56 @@ class ScheduleProcessor:
                             if isinstance(data, dict):
                                 if "asignaciones" in data: data = data["asignaciones"]
                                 else: data = [data]
-                            
-                            logger.debug(f'Batch {i//batch_size + 1}: {len(data)} registros extraídos. Muestra: {data[:2]}')
                                 
-                            # Procesar y limpiar datos del lote
+                            batch_results = []
                             for d in data:
-                                if not d.get('docente_nombre') or not d.get('curso_codigo'):
+                                if not d.get('nombre_docente') or not d.get('curso'):
                                     continue
-                                
-                                # FORZAR PERIODO GLOBAL
-                                d['periodo'] = global_period
-                                all_results.append(d)
-                            
-                            break # Éxito, salir del retry loop
+                                if not d.get('periodo') or d.get('periodo') == "string":
+                                    d['periodo'] = global_period
+                                batch_results.append(d)
+                            return batch_results
                             
                         except Exception as e:
                             error_str = str(e)
-                            is_503 = "503" in error_str or "Handshake read failed" in error_str or "FD Shutdown" in error_str or "Socket closed" in error_str
-                            is_429 = "429" in error_str or "Resource exhausted" in error_str
-                            
-                            if is_429 or is_503:
-                                # Backoff más agresivo para errores de conexión/quota
-                                wait_time = (attempt + 1) * 15 + random.uniform(0, 5) # 15s, 30s, 45s...
-                                err_type = "Quota (429)" if is_429 else "Connection (503)"
-                                logger.warning(f"⚠️ {err_type} en Batch {i//batch_size + 1}. Reintentando en {wait_time:.1f}s... ({attempt+1}/{max_retries})")
+                            if "429" in error_str or "Resource exhausted" in error_str:
+                                wait_time = 10 + random.uniform(2, 5)
+                                logger.warning(f"⚠️ Quota (429) en Batch {batch_idx}. Reintentando en {wait_time:.1f}s... ({attempt+1}/{max_retries})")
                                 time.sleep(wait_time)
-                            elif "Unterminated string" in error_str or "Expecting value" in error_str:
-                                logger.warning(f"⚠️ Error JSON en Batch {i//batch_size + 1}: {e}. Reintentando... ({attempt+1}/{max_retries})")
+                            elif "503" in error_str or "Handshake read failed" in error_str:
+                                logger.warning(f"⚠️ Error 503 en Batch {batch_idx}. Reintentando... ({attempt+1}/{max_retries})")
+                                time.sleep(5)
                             else:
-                                logger.error(f"⚠️ Error en Batch {i//batch_size + 1}: {e}")
-                                # Si no es recuperable, seguimos (o reintentamos si queda chance)
-                                if attempt == max_retries - 1: pass
+                                if attempt == max_retries - 1:
+                                    logger.error(f"⚠️ Error fatal en Batch {batch_idx}: {e}", exc_info=True)
+                                    return []
+                    return []
+
+                # EJECUCIÓN MULTIHILOS
+                workers_actuales = min(MAX_WORKERS, len(bloques))
+                logger.info(f"🚀 Lanzando {len(bloques)} bloques en paralelo usando {workers_actuales} workers...")
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=workers_actuales) as executor:
+                    futuros = {
+                        executor.submit(_procesar_bloque, b[0], b[1]): b[0]
+                        for b in bloques
+                    }
+                    
+                    for futuro in concurrent.futures.as_completed(futuros):
+                        idx = futuros[futuro]
+                        try:
+                            resultados_bloque = futuro.result(timeout=130.0)
+                            all_results.extend(resultados_bloque)
+                        except concurrent.futures.TimeoutError:
+                            logger.error(f"⏱️ TIMEOUT FATAL: Batch {idx} no respondió tras 130s")
+                        except Exception as e:
+                            logger.error(f"❌ Error catastrófico atrapando futuro del Batch {idx}: {e}", exc_info=True)
 
             logger.info(f"✅ Vertex AI extrajo {len(all_results)} registros totales.")
             return all_results
 
         except Exception as e:
-            logger.error(f"❌ Error procesando PDF con Vertex AI: {e}")
+            logger.error(f"❌ Error procesando PDF con Vertex AI: {e}", exc_info=True)
             return []
 
     def save_history_to_db(self, db: Session, data: List[Dict]) -> int:
@@ -216,97 +244,52 @@ class ScheduleProcessor:
         count = 0
         
         try:
-            # --- 1. PRE-FETCHING (Optimización Clave) ---
-            logger.info("⏳ Precargando catálogo de docentes y cursos para comparación rápida...")
-            all_docentes = db.query(Docente).all()
-            all_cursos = db.query(Curso).all()
-            
-            # Convertimos a diccionarios para búsqueda O(1)
-            docentes_cache = {d.nombre.strip().upper(): d for d in all_docentes if d.nombre}
-            cursos_cache = {re.sub(r'[\s\-]', '', c.codigo).upper(): c for c in all_cursos if c.codigo}
-            
-            logger.info(f"📚 Catálogo indexado: {len(docentes_cache)} docentes por nombre, {len(cursos_cache)} cursos con código.")
-
-            import unicodedata
-            
-            def normalize_name(s):
-                s = unicodedata.normalize('NFD', s).encode('ascii', 'ignore').decode('utf-8')
-                s = re.sub(r'[^A-Z0-9 ]', ' ', s.upper())
-                return s.split()
-
-            def match_score(nombre_horario, nombre_bd):
-                words_a = normalize_name(nombre_horario)
-                words_b = normalize_name(nombre_bd)
-                shorter, longer = (words_a, words_b) if len(words_a) <= len(words_b) else (words_b, words_a)
-                matches = sum(1 for w in shorter if w in longer)
-                return matches / len(shorter) if shorter else 0
-
             aggregated_entries = {}
 
             for item in data:
-                docente_nombre = item.get('docente_nombre', '').strip()
-                curso_codigo_norm = re.sub(r'[\s\-]', '', item.get('curso_codigo', '')).upper()
-                curso = cursos_cache.get(curso_codigo_norm)
+                docente_nombre = item.get('nombre_docente', '').strip().upper()
+                curso_nombre = item.get('curso', '').strip().upper()
                 
-                if not docente_nombre or not curso: 
-                    continue
-                    
-                best_match = None
-                best_score = 0
-                for nombre_bd, doc_obj in docentes_cache.items():
-                    score = match_score(docente_nombre, nombre_bd)
-                    if score > best_score:
-                        best_score = score
-                        best_match = doc_obj
-                        
-                docente = None
-                if best_score >= 0.8:
-                    docente = best_match
-                    logger.info(f"✅ Match: Horario='{docente_nombre}' | BD='{docente.nombre}' | Score={best_score:.2f}")
-                else:
-                    best_name = best_match.nombre if best_match else 'None'
-                    logger.warning(f"❌ No match: Horario='{docente_nombre}' | Best BD='{best_name}' | Score={best_score:.2f}")
-
-                if not docente:
+                if not docente_nombre or not curso_nombre: 
                     continue
                 
-                # Clave única para agregación
-                key = (docente.id, curso.id, item['periodo'])
+                # Clave única para agregación en este lote
+                key = (docente_nombre, curso_nombre, item['periodo'])
                 
                 if key in aggregated_entries:
                     aggregated_entries[key] += 1
                 else:
                     aggregated_entries[key] = 1
 
-            # --- 3. GUARDADO EN BD ---
-            for (doc_id, cur_id, per), veces_count in aggregated_entries.items():
+            # --- 3. GUARDADO EN BD (UPSERT Súper Lean) ---
+            for (doc_nombre, c_nombre, per), veces_count in aggregated_entries.items():
                 existing = db.query(Historial).filter(
-                    Historial.docente_id == doc_id,
-                    Historial.curso_id == cur_id,
-                    Historial.periodo == per
+                    Historial.nombre_docente == doc_nombre,
+                    Historial.nombre_curso == c_nombre
                 ).first()
                 
                 if existing:
                     existing.veces += veces_count
+                    if per > existing.ultima_vez:
+                        existing.ultima_vez = per
                     db.add(existing)
                 else:
                     new_entry = Historial(
-                        docente_id=doc_id,
-                        curso_id=cur_id,
-                        periodo=per,
-                        resultado="Asignado en Horario",
-                        veces=veces_count
+                        nombre_docente=doc_nombre,
+                        nombre_curso=c_nombre,
+                        veces=veces_count,
+                        ultima_vez=per
                     )
                     db.add(new_entry)
                     count += 1
             
             db.commit()
-            logger.info(f"💾 Commit exitoso: {count} nuevos registros de historial insertados (con agregación determinista).")
+            logger.info(f"💾 Commit exitoso: {count} nuevos registros de historial insertados (plano).")
             return count
 
         except Exception as e:
             db.rollback()
-            logger.error(f"❌ Error en transaccion de historial: {e}")
+            logger.error(f"❌ Error en transaccion de historial: {e}", exc_info=True)
             return 0
 
 schedule_processor = ScheduleProcessor()

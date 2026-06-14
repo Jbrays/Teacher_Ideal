@@ -35,9 +35,8 @@ export const useAppStore = defineStore('app', {
       return state.data.cursos[state.currentCiclo] || [];
     },
 
-    // Corregido para que 'schedules' sea opcional
     allFoldersSelected: (state) => {
-      return !!(state.folders.cvs && state.folders.syllabi);
+      return !!(state.folders.cvs && state.folders.syllabi && state.folders.schedules);
     },
 
     hasData: (state) => {

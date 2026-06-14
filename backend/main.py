@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 from sqlalchemy.orm import Session
@@ -10,6 +10,14 @@ import sys
 import asyncio
 import uuid
 import logging
+import concurrent.futures
+import threading
+import csv
+import io
+from fpdf import FPDF
+
+memoria_tareas = {}
+background_executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +162,24 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Error interno de autenticación: {str(e)}")
 
+
+async def require_admin(user: dict = Depends(get_current_user)):
+    """Verifica que el usuario autenticado sea administrador."""
+    admin_emails = os.getenv("ADMIN_EMAILS", "").split(",")
+    admin_emails = [email.strip().lower() for email in admin_emails if email.strip()]
+    user_email = user.get("email", "").lower()
+
+    if not admin_emails:
+        logger.warning("ADMIN_EMAILS no está configurado. Acceso admin denegado por seguridad.")
+        raise HTTPException(status_code=403, detail="Acceso denegado: no hay administradores configurados")
+
+    if user_email not in admin_emails:
+        logger.warning(f"Usuario {user_email} intentó acceder a un endpoint administrativo.")
+        raise HTTPException(status_code=403, detail="Acceso denegado: se requieren permisos de administrador")
+
+    return user
+
+
 # --- 5. GOOGLE DRIVE ---
 @app.get("/api/drive/folders")
 async def list_drive_folders(parent_id: Optional[str] = None, authorization: Optional[str] = Header(None)):
@@ -193,7 +219,7 @@ async def list_folder_files(folder_id: str, authorization: Optional[str] = Heade
             "files": files
         }
     except Exception as e:
-        logger.error(f"Error listando archivos: {e}")
+        logger.error(f"Error listando archivos: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error listando archivos: {str(e)}")
 
 from fastapi import Request, BackgroundTasks
@@ -206,22 +232,139 @@ folder_tokens = {}
 
 def process_historical_queue(archivos: list, entidad_inferida: str, folder_id: str):
     """
-    Procesa una lista de archivos secuencialmente con pausas para liberar RAM.
+    Encola una lista de archivos en la base de datos para el daemon despachador.
     """
     access_token = folder_tokens.get(folder_id)
     if not access_token:
         logger.error(f"❌ Error: No se encontró access_token en memoria para el folder_id {folder_id}. Abortando.")
         return
 
-    for archivo in archivos:
-        archivo_nombre = archivo.get('name', 'desconocido')
-        try:
-            process_drive_file_async(archivo['id'], archivo_nombre, entidad_inferida, access_token)
-        except Exception as e:
-            logger.error(f"❌ Error fatal procesando archivo {archivo_nombre} en la cola histórica: {e}")
-        finally:
-            time.sleep(3)  # Permite al Garbage Collector liberar memoria de pdfplumber
+    db = SessionLocal()
+    try:
+        for archivo in archivos:
+            archivo_nombre = archivo.get('name', 'desconocido')
+            name_lower = archivo_nombre.lower()
+            
+            entidad_real = entidad_inferida
+            if entidad_real == "desconocida":
+                if name_lower.endswith(".docx"):
+                    entidad_real = "curso"
+                elif name_lower.endswith(".pdf") and "horario" in name_lower:
+                    entidad_real = "horario"
+                elif name_lower.endswith(".pdf"):
+                    entidad_real = "docente"
+                    
+            # Registrar en memoria para que el daemon lo encuentre
+            memoria_tareas[archivo['id']] = (archivo_nombre, access_token)
+            # Insertar en BD para encolamiento persistente
+            crud.create_webhook_log(db, archivo['id'], "add", entidad_real, "received")
+            logger.info(f"📥 Archivo histórico {archivo_nombre} encolado exitosamente como {entidad_real}.")
+    finally:
+        db.close()
 
+from pydantic import BaseModel
+
+class ConfigAllRequest(BaseModel):
+    cvs_folder_id: str
+    syllabi_folder_id: str
+    schedules_folder_id: str
+
+def process_historical_queue_all(archivos_sched: list, archivos_syl: list, archivos_cv: list, access_token: str):
+    db = SessionLocal()
+    try:
+        from backend.database import crud
+        def encolar(archivos):
+            for archivo in archivos:
+                archivo_nombre = archivo.get('name', 'desconocido')
+                name_lower = archivo_nombre.lower()
+                entidad_real = "desconocida"
+                if name_lower.endswith(".docx"):
+                    entidad_real = "curso"
+                elif name_lower.endswith(".pdf") and "horario" in name_lower:
+                    entidad_real = "horario"
+                elif name_lower.endswith(".pdf"):
+                    entidad_real = "docente"
+                memoria_tareas[archivo['id']] = (archivo_nombre, access_token)
+                crud.create_webhook_log(db, archivo['id'], "add", entidad_real, "received")
+                logger.info(f"📥 Archivo {archivo_nombre} encolado como {entidad_real}.")
+        
+        # Encolar en orden: horarios primero, luego sílabos, finalmente CVs
+        encolar(archivos_sched)
+        encolar(archivos_syl)
+        encolar(archivos_cv)
+    finally:
+        db.close()
+
+
+class ExtractRequest(BaseModel):
+    file_id: str
+    file_name: str
+    entidad: str
+    access_token: str
+
+@app.post("/api/debug/extract")
+def debug_extract(req: ExtractRequest, background_tasks: BackgroundTasks):
+    memoria_tareas[req.file_id] = (req.file_name, req.access_token)
+    db = SessionLocal()
+    crud.create_webhook_log(db, req.file_id, "add", req.entidad, "received")
+    db.close()
+    return {"message": "Encolado"}
+
+def daemon_despachador():
+    db = SessionLocal()
+    while True:
+        try:
+            db.commit() # Romper caché
+            from backend.database.models import WebhookLog
+            pendientes = db.query(WebhookLog).filter(
+                WebhookLog.status == "received"
+            ).order_by(WebhookLog.timestamp.asc()).all()
+
+            if not pendientes:
+                continue
+
+            horarios_activos = db.query(WebhookLog).filter(
+                WebhookLog.entidad == "horario",
+                WebhookLog.status.in_(["received", "processing"])
+            ).count()
+
+            for webhook in pendientes:
+                contexto = memoria_tareas.get(webhook.drive_file_id)
+                if not contexto:
+                    logger.error(f"❌ Webhook huérfano (reinicio contenedor). Marcando {webhook.drive_file_id} como failed.")
+                    webhook.status = "failed"
+                    db.commit()
+                    continue
+                
+                file_name, access_token = contexto
+
+                if webhook.entidad == "docente":
+                    if horarios_activos > 0:
+                        # Retraso aceptable de 15s si un horario termina justo ahora
+                        continue
+                
+                logger.info(f"🚀 Despachando {webhook.entidad} {file_name} al ThreadPool...")
+                webhook.status = "processing"
+                db.commit()
+                background_executor.submit(
+                    process_drive_file_async,
+                    webhook.drive_file_id,
+                    file_name,
+                    webhook.entidad,
+                    access_token
+                )
+                
+        except Exception as e:
+            logger.error(f"Error en daemon_despachador: {e}", exc_info=True)
+        finally:
+            import time
+            time.sleep(15)
+
+@app.on_event("startup")
+def startup_event():
+    logger.info("🚀 Iniciando Daemon Despachador de Tareas...")
+    hilo_daemon = threading.Thread(target=daemon_despachador, daemon=True)
+    hilo_daemon.start()
 
 def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, access_token: str):
     """
@@ -230,10 +373,18 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, a
     """
     if file_name == 'webhook_event' or drive_file_id == 'test_id':
         logger.info("Ignorando ping de prueba del webhook de Drive.")
+        db_temp = SessionLocal()
+        try:
+            crud.update_webhook_log_status(db_temp, drive_file_id, "processed")
+        finally:
+            db_temp.close()
         return
         
     db = SessionLocal()
     try:
+        # PRIMERA línea del hilo de fondo, antes de todo
+        crud.update_webhook_log_status(db, drive_file_id, "processing")
+        
         # 1. Inferencia de Entidad
         name_lower = file_name.lower()
         if entidad == "desconocida":
@@ -245,6 +396,7 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, a
                 entidad = "docente"
             else:
                 logger.warning(f"⚠️ Formato no soportado o entidad no inferible para {file_name}")
+                crud.update_webhook_log_status(db, drive_file_id, "error")
                 return
 
         logger.info(f"🔄 Descargando y procesando {entidad}: {file_name}")
@@ -287,11 +439,13 @@ def process_drive_file_async(drive_file_id: str, file_name: str, entidad: str, a
 
         # 4. Confirmación Transaccional
         db.commit()
-        logger.info(f"✅ Procesamiento y guardado exitoso: {file_name}")
-
+        logger.info(f"✅ Procesamiento asíncrono completado para {file_name}")
+        crud.update_webhook_log_status(db, drive_file_id, "processed")
+        
     except Exception as e:
         db.rollback()
-        logger.error(f"❌ Error procesando {file_name}: {e}")
+        logger.error(f"❌ Error en process_drive_file_async ({file_name}): {e}")
+        crud.update_webhook_log_status(db, drive_file_id, "error")
     finally:
         db.close()
 
@@ -331,6 +485,42 @@ async def config_webhook(folder_id: str, background_tasks: BackgroundTasks, goog
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error configurando webhook: {str(e)}")
+
+@app.post("/api/webhooks/config_all")
+async def config_all_webhooks(request: ConfigAllRequest, background_tasks: BackgroundTasks, google_token: Optional[str] = Header(None, alias="X-Drive-Token"), user: dict = Depends(get_current_user)):
+    if not google_token:
+        raise HTTPException(status_code=401, detail="Token de Google requerido")
+    
+    try:
+        if not drive_service.build_service(google_token):
+            raise HTTPException(status_code=500, detail="Error conectando con Drive")
+        
+        base_url = os.environ.get("WEBHOOK_BASE_URL", "https://teacher-ideal-121734839794.us-central1.run.app")
+        webhook_url = f"{base_url}/api/webhooks/drive"
+        
+        def register_and_list(folder_id):
+            if folder_id in folder_tokens:
+                # Ya registrado, solo obtener archivos
+                return drive_service.list_files_in_folder(folder_id, file_types=None, recursive=True)
+                
+            folder_tokens[folder_id] = google_token
+            ch_id = str(uuid.uuid4())
+            folder_tokens[ch_id] = google_token
+            drive_service.register_webhook(folder_id, webhook_url, ch_id)
+            return drive_service.list_files_in_folder(folder_id, file_types=None, recursive=True)
+            
+        archivos_sched = register_and_list(request.schedules_folder_id)
+        archivos_syl = register_and_list(request.syllabi_folder_id)
+        archivos_cv = register_and_list(request.cvs_folder_id)
+        
+        background_tasks.add_task(process_historical_queue_all, archivos_sched, archivos_syl, archivos_cv, google_token)
+        
+        total = len(archivos_sched) + len(archivos_syl) + len(archivos_cv)
+        return {"success": True, "message": f"Webhooks activos. {total} archivos encolados sincrónicamente."}
+        
+    except Exception as e:
+        logger.error(f"❌ Error en config_all: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- 6. WEBHOOKS DE DRIVE (PROCESAMIENTO AUTÓNOMO) ---
 
@@ -383,19 +573,21 @@ async def drive_webhook(request: Request, background_tasks: BackgroundTasks, db:
             logger.error(f"❌ Error: No se encontró access_token en memoria para el channel_id {channel_id}. Ignorando.")
             return {"status": "error", "message": "No access_token found"}
 
-        # Tarea delegada a la misma función global asíncrona real
-        background_tasks.add_task(
-            process_drive_file_async,
-            drive_file_id=drive_file_id,
-            file_name="webhook_event",
-            entidad=entidad,
-            access_token=access_token
-        )
-        return {"status": "processing_started", "drive_file_id": drive_file_id}
+        # Encolar en memoria para el daemon
+        memoria_tareas[drive_file_id] = ("webhook_event", access_token)
+        # Nota: El crud.create_webhook_log más arriba ya lo dejó en 'received'.
+        logger.info(f"📥 Webhook event para {drive_file_id} encolado en BD y memoria_tareas.")
+        return {"status": "enqueued", "drive_file_id": drive_file_id}
         
     return {"status": "ignored"}
 
-# --- 7. CONSULTAS A LA BD (PROTEGIDAS) ---
+# --- 7. ESTADO DEL SISTEMA ---
+@app.get("/api/system/status")
+async def get_system_status(db: Session = Depends(get_db)):
+    count = crud.get_active_processing_count(db)
+    return {"is_processing": count > 0, "pending_count": count}
+
+# --- 8. CONSULTAS A LA BD (PROTEGIDAS) ---
 @app.get("/api/docentes")
 async def get_docentes(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     docentes = crud.get_all_docentes(db, skip=skip, limit=limit)
@@ -433,7 +625,34 @@ async def delete_docente_endpoint(docente_id: int, db: Session = Depends(get_db)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error en endpoint delete_docente: {e}")
+        logger.error(f"❌ Error en endpoint delete_docente: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+
+@app.delete("/api/admin/clear_db")
+async def clear_database(
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_admin)
+):
+    """Elimina permanentemente todos los registros y la base vectorial. Requiere rol admin."""
+    try:
+        from backend.database.models import RecomendacionCache, Recomendacion, Historial, Curso, Docente, WebhookLog
+        # 1. Purgar base relacional en orden (evitar conflictos FK)
+        db.query(RecomendacionCache).delete()
+        db.query(Recomendacion).delete()
+        db.query(Historial).delete()
+        db.query(Curso).delete()
+        db.query(Docente).delete()
+        db.query(WebhookLog).delete()
+        db.commit()
+
+        # 2. Purgar ChromaDB
+        embeddings_manager.clear_cache(item_type="all")
+        
+        logger.warning("🚨 Base de datos y ChromaDB han sido purgadas completamente mediante la zona de peligro.")
+        return {"success": True, "message": "Base de datos y base vectorial borradas correctamente."}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ Error purgiendo base de datos: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 @app.get("/api/ciclos")
@@ -481,8 +700,165 @@ async def recommend_docentes(curso_id: int, top_k: int = 100, user: dict = Depen
     except Exception as e:
         import traceback
         traceback.print_exc()
-        logger.error(f"❌ Error generando recomendaciones de docentes: {e}")
+        logger.error(f"❌ Error generando recomendaciones de docentes: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error generando recomendaciones: {str(e)}")
+
+@app.get("/api/admin/export_recommendations")
+async def export_all_recommendations(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        logger.info("⏳ Iniciando exportación masiva de recomendaciones...")
+        cursos = crud.get_all_cursos(db, skip=0, limit=1000)
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Curso ID", "Curso Nombre", "Ciclo", "Docente ID", "Docente Nombre", "Email", "Grado", "Score Combinado (%)", "Score Semantico (%)", "Score Tactico (%)", "Score Relativo (%)", "Confianza", "Explicacion IA"])
+
+        for curso in cursos:
+            logger.info(f"🔄 Generando/obteniendo recomendaciones para curso: {curso.nombre}")
+            recommendations = recommendation_engine.recommend_docentes_for_curso(db=db, curso_id=curso.id, top_k=20)
+            
+            if not recommendations:
+                writer.writerow([curso.id, curso.nombre, curso.ciclo or "N/A", "N/A", "Sin docentes recomendados", "", "", "0", "0", "0", "0", "", ""])
+                continue
+                
+            for rec in recommendations:
+                writer.writerow([
+                    curso.id,
+                    curso.nombre,
+                    curso.ciclo or "N/A",
+                    rec.get("docente_id", ""),
+                    rec.get("nombre", ""),
+                    rec.get("email", ""),
+                    rec.get("grado", ""),
+                    rec.get("score_combinado", 0),
+                    rec.get("score_semantico", 0),
+                    rec.get("score_historico", 0),
+                    rec.get("score_relativo", 0),
+                    rec.get("confianza_etiqueta", ""),
+                    rec.get("xai_explanations", "").replace("\n", " ")
+                ])
+                
+        output.seek(0)
+        logger.info("✅ Exportación completa, enviando CSV.")
+        return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=recomendaciones_completas.csv"})
+        
+    except Exception as e:
+        logger.error(f"❌ Error exportando recomendaciones: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error exportando: {str(e)}")
+
+@app.get("/api/recommend/docentes/{curso_id}/export_pdf")
+async def export_curso_recommendations_pdf(curso_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        curso = crud.get_curso_by_id(db, curso_id)
+        if not curso:
+            raise HTTPException(status_code=404, detail=f"Curso con ID {curso_id} no encontrado")
+        
+        recommendations = recommendation_engine.recommend_docentes_for_curso(db=db, curso_id=curso_id, top_k=20)
+        
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=20)
+        pdf.add_page()
+        
+        pdf.set_fill_color(24, 24, 27)
+        pdf.rect(0, 0, 210, 45, 'F')
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font('Helvetica', 'B', 20)
+        pdf.set_y(10)
+        pdf.cell(0, 10, 'RANKING DE DOCENTES', align='C', new_x='LMARGIN', new_y='NEXT')
+        pdf.set_font('Helvetica', '', 12)
+        pdf.cell(0, 8, curso.nombre.upper(), align='C', new_x='LMARGIN', new_y='NEXT')
+        pdf.set_font('Helvetica', '', 9)
+        pdf.cell(0, 6, f'Ciclo {curso.ciclo or "N/A"} | Generado por Vektora', align='C', new_x='LMARGIN', new_y='NEXT')
+        
+        pdf.set_y(50)
+        pdf.set_text_color(0, 0, 0)
+        
+        if not recommendations:
+            pdf.set_font('Helvetica', 'I', 12)
+            pdf.cell(0, 10, 'No hay recomendaciones disponibles para este curso.', align='C')
+        else:
+            for idx, rec in enumerate(recommendations):
+                if pdf.get_y() > 230:
+                    pdf.add_page()
+                    pdf.set_y(15)
+                
+                y_start = pdf.get_y()
+                card_x = 10
+                card_w = 190
+                
+                pdf.set_font('Helvetica', 'B', 24)
+                pdf.set_text_color(180, 180, 180)
+                pdf.set_xy(card_x + 2, y_start + 2)
+                pdf.cell(15, 12, str(idx + 1), align='C')
+                
+                pdf.set_font('Helvetica', 'B', 13)
+                pdf.set_text_color(24, 24, 27)
+                pdf.set_xy(card_x + 20, y_start + 2)
+                nombre_display = rec.get('nombre', '').title() if rec.get('nombre') else 'Sin nombre'
+                pdf.cell(120, 7, nombre_display, align='L')
+                
+                pdf.set_font('Helvetica', '', 8)
+                pdf.set_text_color(120, 120, 120)
+                pdf.set_xy(card_x + 20, y_start + 9)
+                pdf.cell(120, 5, rec.get('email', ''), align='L')
+                
+                score = rec.get('score_combinado', 0)
+                pdf.set_font('Helvetica', 'B', 14)
+                if idx == 0:
+                    pdf.set_fill_color(234, 239, 255)
+                    pdf.set_text_color(67, 56, 202)
+                else:
+                    pdf.set_fill_color(243, 244, 246)
+                    pdf.set_text_color(24, 24, 27)
+                pdf.set_xy(card_x + 155, y_start + 2)
+                pdf.cell(30, 10, f'{score:.0f}%', align='C', fill=True)
+                
+                conf = rec.get('confianza_etiqueta', '')
+                pdf.set_font('Helvetica', '', 8)
+                if 'Muy Alta' in conf:
+                    pdf.set_text_color(21, 128, 61)
+                elif 'Alta' in conf:
+                    pdf.set_text_color(29, 78, 216)
+                elif 'Media' in conf:
+                    pdf.set_text_color(161, 98, 7)
+                else:
+                    pdf.set_text_color(220, 38, 38)
+                pdf.set_xy(card_x + 20, y_start + 16)
+                pdf.cell(60, 5, conf, align='L')
+                
+                pdf.set_text_color(100, 100, 100)
+                pdf.set_font('Helvetica', '', 7)
+                pdf.set_xy(card_x + 80, y_start + 16)
+                sem = rec.get('score_semantico', rec.get('score_est', 0))
+                tac = rec.get('score_historico', rec.get('score_tac', 0))
+                pdf.cell(80, 5, f'Sem: {sem:.0f}% | Tac: {tac:.0f}% | Rel: {rec.get("score_relativo", 0):.0f}%', align='L')
+                
+                xai = rec.get('xai_explanations', '')
+                if xai:
+                    pdf.set_font('Helvetica', '', 8)
+                    pdf.set_text_color(55, 65, 81)
+                    pdf.set_xy(card_x + 20, y_start + 23)
+                    pdf.multi_cell(165, 4, xai, align='L')
+                
+                current_y = pdf.get_y() + 3
+                pdf.set_draw_color(229, 231, 235)
+                pdf.line(card_x + 5, current_y, card_x + card_w - 5, current_y)
+                pdf.set_y(current_y + 5)
+        
+        pdf_bytes = pdf.output()
+        output_buffer = io.BytesIO(pdf_bytes)
+        output_buffer.seek(0)
+        
+        filename = f'ranking_{curso.nombre.replace(" ", "_")[:30]}.pdf'
+        return StreamingResponse(
+            output_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exportando PDF: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error exportando PDF: {str(e)}")
 
 # --- 9. ENDPOINTS DE DEBUG ELIMINADOS ---
 # Los endpoints /api/debug/ner-profile fueron removidos debido a la adopción del LLM Unificado (Gemini)

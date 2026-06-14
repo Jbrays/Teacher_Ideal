@@ -14,12 +14,11 @@ class Docente(Base):
     email = Column(String, nullable=True)
     grado = Column(String, nullable=True)
     entidades_clave = Column(JSON, default=list) # Reemplaza a las 5 columnas anteriores
-    perfil_sintetico = Column(Text, nullable=True) # Reemplaza a cv_text
+    competencias_tecnicas = Column(Text, nullable=True) # Reemplaza a perfil_sintetico/cv_text
     embedding_version = Column(String, default="v1.0")
     embedding_hash = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    historiales = relationship("Historial", back_populates="docente", cascade="all, delete-orphan")
     recomendaciones_cache = relationship("RecomendacionCache", back_populates="docente", cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -34,14 +33,12 @@ class Curso(Base):
     nombre = Column(String, nullable=False, index=True)
     codigo = Column(String, nullable=True)
     ciclo = Column(Integer, nullable=True, default=1, index=True)
-    descripcion = Column(Text, nullable=True)
     entidades_clave = Column(JSON, default=list)
-    perfil_sintetico = Column(Text, nullable=True) # Reemplaza a syllabus_text
+    competencias_tecnicas = Column(Text, nullable=True) # Reemplaza a perfil_sintetico/syllabus_text
     embedding_version = Column(String, default="v1.0")
     embedding_hash = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    historiales = relationship("Historial", back_populates="curso", cascade="all, delete-orphan")
     recomendaciones = relationship("Recomendacion", back_populates="curso", cascade="all, delete-orphan")
     recomendaciones_cache = relationship("RecomendacionCache", back_populates="curso", cascade="all, delete-orphan")
 
@@ -53,22 +50,17 @@ class Historial(Base):
     __tablename__ = "historiales"
     
     id = Column(Integer, primary_key=True, index=True)
-    docente_id = Column(Integer, ForeignKey("docentes.id", ondelete="CASCADE"), nullable=False)
-    curso_id = Column(Integer, ForeignKey("cursos.id", ondelete="CASCADE"), nullable=False)
-    periodo = Column(String, nullable=False)
-    resultado = Column(String, nullable=True)
+    nombre_docente = Column(String, nullable=False, index=True)
+    nombre_curso = Column(String, nullable=False, index=True)
     veces = Column(Integer, default=1)
-    ultima_vez = Column(DateTime, default=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    docente = relationship("Docente", back_populates="historiales")
-    curso = relationship("Curso", back_populates="historiales")
+    ultima_vez = Column(String, nullable=False)
 
     __table_args__ = (
-        Index('idx_historial_docente_curso', 'docente_id', 'curso_id'),
+        Index('idx_historial_docente_curso', 'nombre_docente', 'nombre_curso'),
     )
 
     def __repr__(self):
-        return f"<Historial(docente_id={self.docente_id}, curso_id={self.curso_id}, periodo='{self.periodo}')>"
+        return f"<Historial(nombre_docente='{self.nombre_docente}', curso='{self.nombre_curso}', veces={self.veces})>"
 
 
 class Recomendacion(Base):
@@ -96,8 +88,8 @@ class RecomendacionCache(Base):
     curso_id = Column(Integer, ForeignKey("cursos.id", ondelete="CASCADE"), nullable=False)
     docente_id = Column(Integer, ForeignKey("docentes.id", ondelete="CASCADE"), nullable=False)
     score_combinado = Column(Float, nullable=False)
-    score_historico = Column(Float, default=0.0)
-    score_semantico = Column(Float, nullable=False)
+    score_est = Column(Float, nullable=False, default=0.0)
+    score_tac = Column(Float, nullable=False, default=0.0)
     evidencias = Column(JSON, default=list)
     shap_explanations = Column(JSON, default=dict)
     version_algoritmo = Column(String(50), default="sbert_v1.1")
