@@ -12,7 +12,7 @@ from typing import Dict, Optional, List
 from sqlalchemy.orm import Session
 from google import genai
 from google.genai import types
-from backend.services.entity_utils import get_fast_sbert_model, limpiar_entidades
+from backend.services.entity_utils import get_fast_sbert_model, limpiar_entidades, run_async
 
 logger = logging.getLogger(__name__)
 

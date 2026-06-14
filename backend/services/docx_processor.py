@@ -10,7 +10,7 @@ from io import BytesIO
 from sqlalchemy.orm import Session
 from google import genai
 from google.genai import types
-from backend.services.entity_utils import limpiar_entidades
+from backend.services.entity_utils import limpiar_entidades, run_async
 
 logger = logging.getLogger(__name__)
 
