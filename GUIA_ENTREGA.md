@@ -106,6 +106,8 @@ gcloud projects add-iam-policy-binding ${PROJECT_ID} \
 
 Crearlo a mano antes de tiempo solo dejaría un "cascarón" con una imagen anterior, lo cual no es deseable cuando se entrega el proyecto.
 
+> El `cloudbuild.yaml` incluye un paso adicional para conceder acceso público (`allUsers` como `roles/run.invoker`), porque `--allow-unauthenticated` no siempre aplica la política IAM de forma confiable durante el deploy.
+
 ---
 
 ## 4. Configurar Cloud Build

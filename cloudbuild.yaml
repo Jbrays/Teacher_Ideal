@@ -47,6 +47,20 @@ steps:
       - '--cpu-boost'
       - '--startup-probe=periodSeconds=240,timeoutSeconds=240,failureThreshold=1,tcpSocket.port=8080'
 
+  # 4. Asegurar que el servicio permita tráfico no autenticado
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'services'
+      - 'add-iam-policy-binding'
+      - '$_SERVICE_NAME'
+      - '--region=$_DEPLOY_REGION'
+      - '--member=allUsers'
+      - '--role=roles/run.invoker'
+      - '--platform=managed'
+      - '--project=$PROJECT_ID'
+
 images:
   - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$COMMIT_SHA'
 
