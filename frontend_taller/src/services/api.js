@@ -1,6 +1,6 @@
 const API_CONFIG = {
   development: { baseURL: 'http://localhost:8000' },
-  production: { baseURL: import.meta.env.VITE_API_BASE_URL || 'https://vektora-121734839794.us-central1.run.app' }
+  production: { baseURL: import.meta.env.VITE_API_BASE_URL || 'https://vektora-5ymh5ybzya-uc.a.run.app' }
 };
 
 const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
