@@ -34,9 +34,6 @@ class Curso(Base):
     codigo = Column(String, nullable=True)
     ciclo = Column(Integer, nullable=True, default=1, index=True)
     temas = Column(JSON, default=list)  # Temas semanales extraídos del sílabo
-    # Deprecated: ya no se usan para matching, se mantienen por compatibilidad temporal
-    entidades_clave = Column(JSON, default=list)
-    competencias_tecnicas = Column(Text, nullable=True)
     embedding_version = Column(String, default="v1.0")
     embedding_hash = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
