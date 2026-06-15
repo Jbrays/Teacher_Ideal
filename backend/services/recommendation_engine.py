@@ -230,6 +230,93 @@ EVIDENCIAS DE {len(results_list)} DOCENTES:
                 db.delete(h)
             db.commit()
 
+    def _avg_similarity_vs_temas(
+        self,
+        source_text: str,
+        temas_curso: List[str],
+        source_is_docente: bool = True
+    ) -> float:
+        """
+        Calcula la similitud promedio de un texto (entidad/competencia del docente)
+        contra todos los temas del curso.
+        """
+        if not source_text or not temas_curso:
+            return 0.0
+
+        try:
+            if source_is_docente:
+                source_vec = self.get_embedding_for_docente_text(source_text)
+            else:
+                source_vec = self.get_embedding_for_curso_text(source_text)
+
+            tema_vectors = embeddings_manager.get_entity_embeddings(
+                temas_curso,
+                self.get_embedding_for_curso_text,
+                is_curso=True
+            )
+            if not tema_vectors:
+                return 0.0
+
+            valid_temas = [t for t in temas_curso if t in tema_vectors]
+            if not valid_temas:
+                return 0.0
+
+            target_matrix = np.array([tema_vectors[t] for t in valid_temas])
+            if target_matrix.ndim == 3:
+                target_matrix = np.squeeze(target_matrix, axis=1)
+
+            sim_matrix = cosine_similarity(source_vec, target_matrix)
+            return float(np.mean(sim_matrix))
+        except Exception as e:
+            logger.warning(f"Error calculando similitud para '{source_text[:50]}': {e}")
+            return 0.0
+
+    def _evaluar_docente_vs_temas(
+        self,
+        docente: Docente,
+        temas_curso: List[str],
+        threshold: float = 0.55
+    ) -> tuple:
+        """
+        Evalúa un docente contra los temas del curso.
+        Retorna (score_final, evidencias).
+        """
+        scores_validos = []
+        evidencias = []
+
+        # Entidades del docente
+        if docente.entidades_clave:
+            for entidad in docente.entidades_clave:
+                if not entidad or not entidad.strip():
+                    continue
+                avg_score = self._avg_similarity_vs_temas(entidad.strip(), temas_curso, source_is_docente=True)
+                if avg_score >= threshold:
+                    scores_validos.append(avg_score)
+                    evidencias.append({
+                        'tipo': 'entidad',
+                        'texto': entidad.strip(),
+                        'score_promedio': round(avg_score, 4)
+                    })
+
+        # Competencias del docente (divididas por comas)
+        if docente.competencias_tecnicas:
+            competencias = [c.strip() for c in docente.competencias_tecnicas.split(',') if c.strip()]
+            for comp in competencias:
+                avg_score = self._avg_similarity_vs_temas(comp, temas_curso, source_is_docente=True)
+                if avg_score >= threshold:
+                    scores_validos.append(avg_score)
+                    evidencias.append({
+                        'tipo': 'competencia',
+                        'texto': comp,
+                        'score_promedio': round(avg_score, 4)
+                    })
+
+        if not scores_validos:
+            return 0.0, []
+
+        score_final = sum(scores_validos) / len(scores_validos)
+        return score_final, evidencias
+
     def recommend_docentes_for_curso(
         self,
         db: Session,
@@ -239,152 +326,33 @@ EVIDENCIAS DE {len(results_list)} DOCENTES:
         cache_max_age_days: int = 7
     ) -> List[Dict]:
         try:
-            # 1. Intentar usar Cache L1
-            if use_cache:
-                cached_recommendations = crud.get_recomendaciones_cache(db, curso_id, max_age_days=cache_max_age_days)
-                if cached_recommendations and len(cached_recommendations) >= top_k:
-                    recommendations = []
-                    for cache_entry in cached_recommendations[:top_k]:
-                        docente = crud.get_docente_by_id(db, cache_entry.docente_id)
-                        if not docente: continue
-                        
-                        recommendations.append({
-                            'docente_id': docente.id,
-                            'nombre': docente.nombre,
-                            'email': docente.email,
-                            'grado': docente.grado,
-                            'entidades_clave': docente.entidades_clave,
-                            'score_combinado': round(cache_entry.score_combinado * 100, 2),
-                            'score_est': round(cache_entry.score_est * 100, 2),
-                            'score_tac': round(cache_entry.score_tac * 100, 2),
-                            'score_relativo': round(cache_entry.score_combinado * 100, 2), # Se recalcula luego
-                            'confianza_etiqueta': cache_entry.version_algoritmo, # Reciclado
-                            'evidencias': cache_entry.evidencias if cache_entry.evidencias else {'entidades_clave': []},
-                            'xai_explanations': cache_entry.shap_explanations.get('text', ''),
-                            'from_cache': True
-                        })
-                    
-                    # Recalcular score_relativo para el subset en caché
-                    if recommendations:
-                        max_score = recommendations[0]['score_combinado']
-                        for rec in recommendations:
-                            rec['score_relativo'] = round((rec['score_combinado'] / max_score) * 100, 2) if max_score > 0 else 0
-                    return recommendations
-
-            # 2. Si no hay cache, calcular desde cero
             curso = crud.get_curso_by_id(db, curso_id)
             if not curso: return []
-            
+
+            # Nuevo motor: requiere temas semanales
+            temas_curso = curso.temas or []
+            if not temas_curso:
+                logger.warning(f"Curso {curso_id} no tiene temas semanales. No se pueden generar recomendaciones.")
+                return []
+
             docentes = crud.get_all_docentes(db)
-            
-            # --- SANEAMIENTO DIFERIDO (Limpiar historiales huérfanos) ---
             self._saneamiento_diferido(db, docentes)
 
-            # --- LÓGICA DE MATCH PURO ---
-            W_EST = 0.7
-            W_TAC = 0.3
-
-            # Recolectar todos los strings para embeddear (Separados por Query y Document)
-            todas_entidades_curso = set()
-            todas_competencias_curso = set()
-            todas_entidades_docente = set()
-            todas_competencias_docente = set()
-            
-            if curso.entidades_clave:
-                todas_entidades_curso.update(curso.entidades_clave)
-            if curso.competencias_tecnicas:
-                todas_competencias_curso.add(curso.competencias_tecnicas)
-
-            for d in docentes:
-                if d.entidades_clave:
-                    todas_entidades_docente.update(d.entidades_clave)
-                if d.competencias_tecnicas:
-                    todas_competencias_docente.add(d.competencias_tecnicas)
-
-            # Obtener vectores (aprovecha la caché local de SQLite en el manager con llaves separadas)
-            entidades_curso_vectores = embeddings_manager.get_entity_embeddings(list(todas_entidades_curso), self.get_embedding_for_curso_text, is_curso=True)
-            competencias_curso_vectores = embeddings_manager.get_entity_embeddings(list(todas_competencias_curso), self.get_embedding_for_curso_text, is_curso=True)
-            
-            entidades_docente_vectores = embeddings_manager.get_entity_embeddings(list(todas_entidades_docente), self.get_embedding_for_docente_text, is_curso=False)
-            competencias_docente_vectores = embeddings_manager.get_entity_embeddings(list(todas_competencias_docente), self.get_embedding_for_docente_text, is_curso=False)
-            
-            if not curso.entidades_clave or not entidades_curso_vectores:
-                return []
-                
-            c_entities = curso.entidades_clave
-            c_vectors = np.array([entidades_curso_vectores[e] for e in c_entities if e in entidades_curso_vectores])
-            if c_vectors.ndim == 3: c_vectors = np.squeeze(c_vectors, axis=1)
-            if len(c_vectors) == 0: return []
-            
-            # Vector táctico del curso
-            c_tac_vector = None
-            if curso.competencias_tecnicas and curso.competencias_tecnicas in competencias_curso_vectores:
-                c_tac_vector = np.array([competencias_curso_vectores[curso.competencias_tecnicas]])
-                if c_tac_vector.ndim == 3: c_tac_vector = np.squeeze(c_tac_vector, axis=1)
-
-            # Calcular Similitud Semántica (Match Estratégico S_EST y Match Táctico S_TAC)
+            THRESHOLD = 0.55
             final_scores = []
+
             for docente in docentes:
-                d_entities = docente.entidades_clave
-                if not d_entities:
+                score, evidencias = self._evaluar_docente_vs_temas(docente, temas_curso, THRESHOLD)
+                if score <= 0:
                     continue
-                    
-                d_vectors = np.array([entidades_docente_vectores[e] for e in d_entities if e in entidades_docente_vectores])
-                if len(d_vectors) == 0:
-                    continue
-                if d_vectors.ndim == 3: d_vectors = np.squeeze(d_vectors, axis=1)
-                
-                # Matriz Coseno S_EST
-                sim_matrix = cosine_similarity(c_vectors, d_vectors)
-                
-                # Asignación Lineal (Algoritmo Húngaro) para matching 1 a 1
-                # linear_sum_assignment minimiza el costo, así que usamos 1 - similitud
-                cost_matrix = 1.0 - sim_matrix
-                row_ind, col_ind = linear_sum_assignment(cost_matrix)
-                
-                THRESHOLD = 0.55
-                
-                best_matches = []
-                # El promedio se calcula sobre el total de entidades del curso, penalizando
-                # a docentes que no pueden cubrir todas.
-                total_curso_entidades = len(c_entities)
-                sum_scores = 0.0
-                
-                for r, c in zip(row_ind, col_ind):
-                    score = float(sim_matrix[r][c])
-                    if score >= THRESHOLD:
-                        sum_scores += score
-                        best_matches.append({
-                            'curso_entidad': c_entities[r],
-                            'docente_entidad': d_entities[c],
-                            'score': score
-                        })
-                
-                s_est = sum_scores / total_curso_entidades if total_curso_entidades > 0 else 0.0
-                
-                best_matches.sort(key=lambda x: x['score'], reverse=True)
-                top_evidencias = best_matches[:5]
-                
-                # Cálculo de S_TAC
-                s_tac = 0.0
-                if c_tac_vector is not None and docente.competencias_tecnicas and docente.competencias_tecnicas in competencias_docente_vectores:
-                    d_tac_vector = np.array([competencias_docente_vectores[docente.competencias_tecnicas]])
-                    if d_tac_vector.ndim == 3: d_tac_vector = np.squeeze(d_tac_vector, axis=1)
-                    s_tac = float(cosine_similarity(c_tac_vector, d_tac_vector)[0][0])
-                
-                # Score Combinado (Match Puro sin penalizaciones)
-                combined_score = (s_est * W_EST) + (s_tac * W_TAC)
-                
+
                 final_scores.append({
                     'docente_id': docente.id,
                     'docente_obj': docente,
-                    'score_combinado': combined_score,
-                    'score_est': s_est,
-                    'score_tac': s_tac,
-                    'evidencias': {'matches_atomicos': top_evidencias}
+                    'score_combinado': score,
+                    'evidencias': evidencias
                 })
 
-            # 6. Ordenar por Score Final
             final_scores.sort(key=lambda x: x['score_combinado'], reverse=True)
             top_results = final_scores[:top_k]
 
@@ -393,27 +361,29 @@ EVIDENCIAS DE {len(results_list)} DOCENTES:
 
             winner_score = top_results[0]['score_combinado']
 
-            # 7. Formatear Resultados (XAI NLG, Relative Score, Confidence)
             recommendations_to_save = []
             recommendations_for_api = []
-            
-            # Solo generar NLG para los top 3 para ahorrar tiempo/costos
-            nlg_results = self._generate_nlg_explanations_batch(top_results[:10])
-            
+
             for idx, result in enumerate(top_results):
                 docente = result['docente_obj']
-                
-                xai_text = nlg_results[idx] if idx < len(nlg_results) else ""
-                
-                # Etiqueta de Confianza Absoluta
                 score_abs = result['score_combinado']
+
                 if score_abs >= 0.80: conf_tag = "Confianza Muy Alta"
                 elif score_abs >= 0.60: conf_tag = "Confianza Alta"
                 elif score_abs >= 0.40: conf_tag = "Confianza Media"
                 else: conf_tag = "Confianza Baja"
 
-                # Score Relativo
                 score_rel = (score_abs / winner_score) if winner_score > 0 else 0
+
+                # Generar explicación XAI simple sin llamar a Gemini
+                evidencias = result.get('evidencias', [])
+                xai_lines = ["Evidencias del match:"]
+                if evidencias:
+                    for ev in sorted(evidencias, key=lambda x: x['score_promedio'], reverse=True)[:8]:
+                        xai_lines.append(f"* {ev['texto']} ({ev['score_promedio']*100:.1f}%)")
+                else:
+                    xai_lines.append("* Sin evidencias de match directo.")
+                xai_text = "\n".join(xai_lines)
 
                 rec_data = {
                     'docente_id': docente.id,
@@ -422,32 +392,34 @@ EVIDENCIAS DE {len(results_list)} DOCENTES:
                     'grado': docente.grado,
                     'entidades_clave': docente.entidades_clave,
                     'score_combinado': round(score_abs * 100, 2),
-                    'score_est': round(result.get('score_est', 0) * 100, 2),
-                    'score_tac': round(result.get('score_tac', 0) * 100, 2),
-                    'score_historico': round(result.get('score_tac', 0) * 100, 2),
-                    'score_semantico': round(result.get('score_est', 0) * 100, 2),
+                    'score_est': round(score_abs * 100, 2),
+                    'score_tac': 0.0,
+                    'score_historico': 0.0,
+                    'score_semantico': round(score_abs * 100, 2),
                     'score_relativo': round(score_rel * 100, 2),
                     'confianza_etiqueta': conf_tag,
-                    'evidencias': result['evidencias'],
+                    'evidencias': {
+                        'entidades_clave': [ev['texto'] for ev in evidencias if ev['tipo'] == 'entidad'][:5],
+                        'competencias': [ev['texto'] for ev in evidencias if ev['tipo'] == 'competencia'][:5],
+                        'entradas_validas': evidencias
+                    },
                     'xai_explanations': xai_text,
                     'from_cache': False
                 }
 
                 recommendations_for_api.append(rec_data)
 
-                # Guardamos en el campo shap_explanations por compatibilidad de esquema
                 rec_save = rec_data.copy()
                 rec_save['shap_explanations'] = {'text': xai_text}
-                rec_save['version_algoritmo'] = conf_tag # Reutilizamos campo para la confianza
+                rec_save['version_algoritmo'] = conf_tag
                 recommendations_to_save.append(rec_save)
 
-            # 8. Guardar en Cache
             if use_cache:
                 from backend.database.db_session import SessionLocal
                 db_temp = SessionLocal()
                 try:
                     crud.save_recomendaciones_cache(
-                        db_temp, curso_id, recommendations_to_save, version_algoritmo="ashp_v1.0"
+                        db_temp, curso_id, recommendations_to_save, version_algoritmo="temas_v1.0"
                     )
                 except Exception as cache_error:
                     logger.error(f"Error guardando caché diferido: {cache_error}")

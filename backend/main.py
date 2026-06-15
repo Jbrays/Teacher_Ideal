@@ -672,7 +672,7 @@ async def get_cursos(ciclo: Optional[int] = None, db: Session = Depends(get_db),
                 "nombre": c.nombre, 
                 "codigo": c.codigo, 
                 "ciclo": c.ciclo, 
-                "entidades_clave": c.entidades_clave
+                "temas": c.temas
             } for c in cursos
         ]
     }

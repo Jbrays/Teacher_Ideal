@@ -3,111 +3,83 @@ import json
 import os
 import asyncio
 import random
+import re
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from docx import Document
 from io import BytesIO
 from sqlalchemy.orm import Session
 from google import genai
 from google.genai import types
-from backend.services.entity_utils import limpiar_entidades, run_async
+from backend.services.entity_utils import run_async
 
 logger = logging.getLogger(__name__)
 
-def prompt_directo_silabo(texto_silabo: str) -> str:
+
+def prompt_temas_silabo(texto_silabo: str) -> str:
     return f"""
-Eres un extractor de información estricto. Solo usas lo que está 
-literalmente en el documento. No puedes inferir ni completar.
+Eres un extractor de información de sílabos universitarios. Solo usas lo que está
+literalmente en el documento. No inventas ni condensas información.
 
-RECORRE EN ORDEN:
-1. ENCABEZADO: extrae nombre del curso, código y ciclo.
-2. UNIDADES Y SEMANAS: recorre CADA unidad y CADA semana sin excepción.
-   Por cada semana extrae todo lo mencionado en Contenidos Temáticos 
-   y Actividades de Aprendizaje que sea conocimiento técnico enseñable 
-   con nombre propio.
-3. CONSOLIDA sin duplicados.
+TAREA:
+Revisa la tabla de programación semanal del sílabo y extrae el contenido temático
+de cada semana. La tabla suele tener columnas como "N° Semanas", "Contenidos Temáticos"
+y "Actividades de Aprendizaje". Debes extraer SOLO la columna "Contenidos Temáticos".
 
-DEFINICIÓN:
-- competencias_tecnicas: lista exhaustiva de todo lo encontrado en 
-  el paso 2. Son herramientas, lenguajes, frameworks, metodologías, 
-  teorías y paradigmas con nombre propio declarados explícitamente 
-  en el documento.
-  Si no hay nada explícito: ["[No declarado]"].
+REGLAS OBLIGATORIAS:
+1. Revisa semana por semana. No saltes ninguna semana.
+2. Extrae el contenido temático tal cual aparece, sin resumir.
+3. Si una semana tiene varios temas, divídelos en items separados.
+4. No inventes temas que no estén en el documento.
+5. No condenses varias semanas en una sola.
 
-Si un dato no está en el documento: "[No declarado]".
-Los valores del JSON no deben contener prefijos ni etiquetas.
-Incorrecto: "Competencias Técnicas: Big Data"
-Correcto: "Big Data"
+OMITIR SIEMPRE:
+- Semanas de evaluación: "Evaluación Parcial", "Evaluación Final", "Examen Sustitutorio"
+- Semanas de retroalimentación
+- Hitos de proyecto
+- Foros participativos
+- Semanas de actualización académica
+- Presentación de proyectos
+- Cualquier actividad que no sea contenido temático
 
+FORMATO DE SALIDA:
 Devuelve ÚNICAMENTE este JSON:
 {{
   "nombre": "string",
   "codigo": "string",
   "ciclo": 0,
-  "competencias_tecnicas": ["string"]
+  "temas": ["string"]
 }}
 
-DOCUMENTO COMPLETO:
+Si no hay temas extraíbles: "temas": [].
+
+DOCUMENTO:
 {texto_silabo}
 """
 
-# LLAMADA 2 — Gemini 2.5 Pro — entidades clave
-def prompt_entidades_silabo(texto_silabo: str) -> str:
-    return f"""
-Lee el sílabo completo y determina EXACTAMENTE 6 áreas de conocimiento 
-técnico que un docente debe dominar para dictar este curso.
 
-REGLA FUNDAMENTAL:
-NUNCA incluyas el nombre del curso, nombres de carreras, títulos 
-académicos, instituciones, cargos administrativos ni elementos de 
-acreditación como entidades.
+# Filtro de seguridad post-extracción: elimina items que no son contenido temático
+PALABRAS_EXCLUIR = re.compile(
+    r'evaluaci[oó]n|examen|parcial|final|sustitutorio|retroalimentaci[oó]n|'
+    r'hito\s*\d|semana\s*de\s*actualizaci[oó]n|foro\s*participativo|'
+    r'presentaci[oó]n\s*de\s*proyectos|informe\s*final|preparaci[oó]n\s*para',
+    re.IGNORECASE
+)
 
-UNA BUENA ENTIDAD representa conocimiento técnico enseñable, 
-específico y verificable en el sílabo. Debe diferenciar este curso 
-de otros en un sistema de matching con docentes.
 
-CRITERIOS DE EXCLUSIÓN (aplican siempre):
-- Nombre del curso o palabras clave del título del curso.
-- Nombres de carrera: Ingeniería de Software, Ingeniería de Sistemas, 
-  Sistemas de Información, Ciencias de la Computación, etc.
-- Títulos académicos: Maestría en..., Doctor en..., etc.
-- Instituciones: universidades, facultades, escuelas.
-- Cargos: Gerente, Jefe, Director, etc.
-- Elementos administrativos o de acreditación.
-- Títulos de unidad que funcionan como agrupadores temáticos. La 
-  entidad debe ser el conocimiento técnico dentro de la unidad.
-- Herramientas o software específicos: representan el área de 
-  conocimiento que las contiene, no el área en sí misma.
+def filtrar_temas(temas: List[str]) -> List[str]:
+    """Elimina items que no son contenido temático real."""
+    filtrados = []
+    for t in temas:
+        if not t or not t.strip():
+            continue
+        t_limpio = t.strip()
+        if PALABRAS_EXCLUIR.search(t_limpio):
+            logger.info(f"Tema excluido por filtro: '{t_limpio[:80]}...'")
+            continue
+        filtrados.append(t_limpio)
+    return filtrados
 
-CRITERIO DE SELECCIÓN:
-Basa tu selección en los Contenidos Temáticos por semana y las 
-actividades prácticas calificadas. No en la sumilla sola ni en el 
-nombre del curso.
-Si un tema aparece en múltiples semanas, cuenta como una sola 
-entidad más relevante, no como varias.
-
-EJEMPLOS DE ENTIDADES VÁLIDAS:
-- Arquitectura de Software
-- Gestión de Requerimientos
-- Pruebas y Validación de Software
-- Desarrollo de APIs
-- Bases de Datos Distribuidas
-- Metodologías Ágiles
-
-EJEMPLOS DE LO QUE NUNCA DEBES INCLUIR:
-- Sistemas de Información Transaccionales
-- Ingeniería de Software
-- Universidad Privada Antenor Orrego
-- Facultad de Ingeniería
-- Unidad 1: Introducción
-- Acreditación
-
-Devuelve ÚNICAMENTE este JSON sin prefijos ni etiquetas dentro de los valores:
-{{"entidades_clave": ["string"]}}
-
-DOCUMENTO COMPLETO:
-{texto_silabo}
-"""
 
 class DOCXProcessor:
     def __init__(self):
@@ -135,7 +107,7 @@ class DOCXProcessor:
                 response = await asyncio.wait_for(
                     self.client.aio.models.generate_content(
                         model="gemini-3.1-flash-lite",
-                        contents=prompt_directo_silabo(texto),
+                        contents=prompt_temas_silabo(texto),
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
                             temperature=0.1
@@ -156,50 +128,8 @@ class DOCXProcessor:
                 logger.error(f"Error en Flash Lite Sílabo (intento {attempt+1}): {e}", exc_info=True)
                 return {}
 
-    async def llamar_pro(self, texto: str) -> dict:
-        if not self.client: return {"entidades_clave": []}
-        import time
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                if attempt > 0:
-                    wait = 5 * (2 ** (attempt - 1)) + random.uniform(0, 2)
-                    logger.warning(f"⏳ [Sílabo] Gemini Pro retry {attempt+1}/{max_retries} en {wait:.1f}s...")
-                    await asyncio.sleep(wait)
-                start_time = time.time()
-                response = await asyncio.wait_for(
-                    self.client.aio.models.generate_content(
-                        model="gemini-2.5-pro",
-                        contents=prompt_entidades_silabo(texto),
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            temperature=0.1
-                        )
-                    ),
-                    timeout=120.0
-                )
-                elapsed = time.time() - start_time
-                logger.info(f"⏱️ [Sílabo] Gemini 2.5 Pro tardó: {elapsed:.2f} segundos")
-                try:
-                    return json.loads(response.text.strip())
-                except Exception as e:
-                    logger.error(f"Error parseando Pro (DOCX): {e}")
-                    return {"entidades_clave": []}
-            except Exception as e:
-                if ("429" in str(e) or "RESOURCE_EXHAUSTED" in str(e)) and attempt < max_retries - 1:
-                    continue
-                logger.error(f"Error en Gemini Pro Sílabo (intento {attempt+1}): {e}", exc_info=True)
-                return {"entidades_clave": []}
-
     async def procesar_silabo(self, texto_silabo: str) -> dict:
-        resultado_directo, resultado_entidades = await asyncio.gather(
-            self.llamar_flash_lite(texto_silabo),
-            self.llamar_pro(texto_silabo)
-        )
-        if resultado_directo:
-            resultado_directo["entidades_clave"] = resultado_entidades.get("entidades_clave", [])
-            return resultado_directo
-        return {}
+        return await self.llamar_flash_lite(texto_silabo)
 
     def extract_text_from_docx(self, docx_bytes: bytes) -> str:
         """Extrae todo el texto plano del DOCX, incluyendo tablas, respetando el orden real."""
@@ -240,9 +170,9 @@ class DOCXProcessor:
             if not full_text:
                 return {'success': False, 'error': 'DOCX vacío o ilegible'}
 
-            logger.info(f"Corriendo Orquestador Paralelo para Sílabo: {filename}")
+            logger.info(f"Extrayendo temas semanales del sílabo: {filename}")
             
-            # 2. Orquestar modelos
+            # 2. Extraer con Flash Lite
             ai_data = run_async(self.procesar_silabo(full_text))
 
             if not ai_data:
@@ -253,20 +183,16 @@ class DOCXProcessor:
             if not nombre and filename:
                 nombre = filename.replace('.docx', '').replace('_', ' ')
 
-            # 3. Enriquecer con datos del JSON
-            comp_tec = ai_data.get('competencias_tecnicas', [])
-            if isinstance(comp_tec, list):
-                comp_tec = ", ".join(comp_tec)
-            target_text = comp_tec
-            entities = ai_data.get('entidades_clave', [])
+            temas_extraidos = ai_data.get('temas', [])
+            temas_filtrados = filtrar_temas(temas_extraidos)
+            logger.info(f"Temas extraídos: {len(temas_extraidos)} | Temas válidos: {len(temas_filtrados)}")
             
             return {
                 'success': True,
                 'nombre': nombre,
                 'codigo': ai_data.get('codigo'),
                 'ciclo': ai_data.get('ciclo', 1),
-                'entidades_clave': entities,
-                'competencias_tecnicas': target_text,
+                'temas': temas_filtrados,
                 'raw_text': full_text,
                 'raw_text_length': len(full_text)
             }
@@ -279,24 +205,14 @@ class DOCXProcessor:
             from backend.database import crud
             existing = crud.get_curso_by_drive_id(db, drive_file_id)
 
-            entidades_extraidas = syllabus_info.get('entidades_clave', [])
-            raw_text = syllabus_info.get('raw_text', '')
-
-            entidades_limpias = limpiar_entidades(
-                entidades_extraidas,
-                raw_text,
-                min_entidades=3,
-                max_entidades=6
-            )
-            logger.info(f"Entidades de sílabo extraídas: {entidades_extraidas}")
-            logger.info(f"Entidades de sílabo después de limpieza: {entidades_limpias}")
-
             data = {
                 "nombre": syllabus_info.get('nombre', 'Curso Desconocido'),
                 "codigo": syllabus_info.get('codigo'),
                 "ciclo": int(syllabus_info.get('ciclo', 1)),
-                "entidades_clave": entidades_limpias,
-                "competencias_tecnicas": syllabus_info.get('competencias_tecnicas', '')
+                "temas": syllabus_info.get('temas', []),
+                # Deprecated: se mantienen vacíos por compatibilidad
+                "entidades_clave": [],
+                "competencias_tecnicas": ""
             }
 
             if existing:

@@ -83,6 +83,7 @@ class Curso(BaseModel):
     nombre: str
     codigo: Optional[str] = None
     ciclo: int
+    temas: List[str] = []
     descripcion: Optional[str] = None
     areas: List[str] = []
     herramientas: List[str] = []
