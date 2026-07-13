@@ -272,3 +272,65 @@ export async function exportCursoRecommendationsPdf(cursoId, cursoNombre) {
     throw error;
   }
 }
+
+/**
+ * Obtener todos los colaboradores
+ */
+export async function fetchColaboradores() {
+  try {
+    const response = await fetch(apiURL('/api/colaboradores'), {
+      method: 'GET',
+      headers: await getAuthHeaders()
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Error ${response.status}: ${errorData.detail || response.statusText}`);
+    }
+    const data = await response.json();
+    return data.colaboradores || [];
+  } catch (error) {
+    console.error('Error obteniendo colaboradores:', error);
+    throw error;
+  }
+}
+
+/**
+ * Añadir un colaborador
+ */
+export async function addColaborador(email) {
+  try {
+    const response = await fetch(apiURL('/api/colaboradores'), {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ invitado_email: email })
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Error ${response.status}: ${errorData.detail || response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error añadiendo colaborador:', error);
+    throw error;
+  }
+}
+
+/**
+ * Eliminar un colaborador
+ */
+export async function removeColaborador(email) {
+  try {
+    const response = await fetch(apiURL(`/api/colaboradores/${encodeURIComponent(email)}`), {
+      method: 'DELETE',
+      headers: await getAuthHeaders()
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Error ${response.status}: ${errorData.detail || response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error(`Error eliminando colaborador ${email}:`, error);
+    throw error;
+  }
+}
