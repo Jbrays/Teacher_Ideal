@@ -41,19 +41,7 @@
           </section>
 
           <!-- Danger Zone Card -->
-          <section class="bg-surface rounded-card p-6 shadow-[0_2px_8px_rgba(0,0,0,0.05)] border border-error-container">
-            <h2 class="font-title-lg text-title-lg text-error mb-4 flex items-center gap-2">
-              <span class="material-symbols-outlined">warning</span>
-              Zona de Peligro
-            </h2>
-            <p class="font-body-md text-body-md text-on-surface-variant mb-6">
-              Esta acción es irreversible. Se borrarán todos los registros descargados de la base de datos (CVs, sílabos, etc.).
-            </p>
-            <button @click="handleClearDatabase" class="w-full py-3 rounded-full bg-error text-on-error font-label-lg text-label-lg flex justify-center items-center gap-2 hover:bg-[#a61717] transition-colors shadow-sm">
-              <span class="material-symbols-outlined text-[20px]">delete_forever</span>
-              Borrar base de datos
-            </button>
-          </section>
+          
 
           <!-- Herramientas Dev Card -->
           <section class="bg-surface rounded-card p-6 shadow-[0_2px_8px_rgba(0,0,0,0.05)] border border-primary-container mt-4">
@@ -136,7 +124,7 @@
             <div class="flex justify-end pt-6 border-t border-surface-variant">
               <button 
                 :disabled="!allFoldersSelected || isAnyProcessing || isSynced"
-                @click="processData"
+                @click="openProcessModal"
                 class="px-8 py-3 rounded-full font-label-lg text-label-lg font-medium flex items-center gap-2 shadow-sm transition-all"
                 :class="(!allFoldersSelected || isAnyProcessing || isSynced) ? 'bg-surface-dim text-outline cursor-not-allowed' : 'bg-primary text-on-primary hover:opacity-90'"
               >
@@ -152,6 +140,40 @@
 
       </div>
     </main>
+
+    <!-- Modal de Confidencialidad -->
+    <div v-if="showConfidentialityModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div class="bg-surface rounded-card p-6 md:p-8 max-w-lg w-full shadow-lg border border-surface-variant flex flex-col">
+        <h3 class="font-headline-sm text-headline-sm text-on-surface mb-4 flex items-center gap-2">
+          <span class="material-symbols-outlined text-primary">gavel</span>
+          Términos de Confidencialidad
+        </h3>
+        <p class="font-body-md text-body-md text-on-surface-variant mb-6 leading-relaxed">
+          Atención: El procesamiento masivo implica la lectura y estandarización de datos académicos y personales. Debe confirmar que cuenta con las autorizaciones de confidencialidad de la universidad para proceder con esta operación.
+        </p>
+        
+        <label class="flex items-start gap-3 cursor-pointer mb-8 p-4 bg-surface-container-lowest rounded-xl border border-outline-variant hover:bg-surface-container-low transition-colors">
+          <input type="checkbox" v-model="acceptedTerms" class="mt-1 w-5 h-5 text-primary rounded border-outline focus:ring-primary focus:ring-offset-surface">
+          <span class="font-body-md text-body-md text-on-surface select-none">
+            Confirmo que tengo los permisos necesarios y acepto la responsabilidad del tratamiento de estos datos.
+          </span>
+        </label>
+
+        <div class="flex justify-end gap-3 mt-auto">
+          <button @click="closeModal" class="px-6 py-2.5 rounded-full font-label-lg text-label-lg text-on-surface-variant hover:bg-surface-variant transition-colors">
+            Cancelar
+          </button>
+          <button 
+            @click="confirmAndProcess" 
+            :disabled="!acceptedTerms"
+            class="px-6 py-2.5 rounded-full font-label-lg text-label-lg transition-all"
+            :class="acceptedTerms ? 'bg-primary text-on-primary hover:opacity-90 shadow-sm' : 'bg-surface-dim text-outline cursor-not-allowed'"
+          >
+            Aceptar y Procesar
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -191,6 +213,8 @@ export default {
     
     const processStatus = ref("");
     const errorMessage = ref("");
+    const showConfidentialityModal = ref(false);
+    const acceptedTerms = ref(false);
 
     const folderState = ref({
       cvs: store.folders.cvs,
@@ -329,6 +353,22 @@ export default {
       return token;
     };
 
+    const openProcessModal = () => {
+      if (!allFoldersSelected.value || isAnyProcessing.value || isSynced.value) return;
+      acceptedTerms.value = false;
+      showConfidentialityModal.value = true;
+    };
+
+    const closeModal = () => {
+      showConfidentialityModal.value = false;
+      acceptedTerms.value = false;
+    };
+
+    const confirmAndProcess = () => {
+      showConfidentialityModal.value = false;
+      processData();
+    };
+
     const processData = async () => {
       if (!allFoldersSelected.value) {
         errorMessage.value = "Falta seleccionar una o más carpetas.";
@@ -395,6 +435,11 @@ export default {
       exportingRecommendations,
       selectFolderHandler,
       processData,
+      openProcessModal,
+      closeModal,
+      confirmAndProcess,
+      showConfidentialityModal,
+      acceptedTerms,
       isSynced
     };
   },

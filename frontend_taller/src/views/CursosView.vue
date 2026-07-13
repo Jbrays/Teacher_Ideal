@@ -60,7 +60,6 @@
           </div>
           <div class="mt-4">
             <h3 class="font-title-lg text-title-lg text-on-surface mb-1 group-hover:text-primary transition-colors leading-tight uppercase">{{ curso.nombre }}</h3>
-            <p v-if="curso.codigo" class="font-body-md text-body-md text-on-surface-variant mt-2">Código: <span class="font-medium uppercase">{{ curso.codigo }}</span></p>
           </div>
         </a>
       </div>
