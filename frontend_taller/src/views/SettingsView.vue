@@ -40,8 +40,62 @@
             </button>
           </section>
 
-          <!-- Danger Zone Card -->
-          
+          <!-- Colaboradores Card -->
+          <section class="bg-surface rounded-card p-6 shadow-[0_2px_8px_rgba(0,0,0,0.05)] border border-surface-variant mt-4">
+            <h2 class="font-title-lg text-title-lg text-on-surface mb-4 flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary">group</span>
+              Colaboradores
+            </h2>
+            <p class="font-body-md text-body-md text-on-surface-variant mb-4">
+              Invita a otros correos para que tengan acceso a la configuración y procesamiento de datos.
+            </p>
+            
+            <form @submit.prevent="handleAddColaborador" class="flex flex-col gap-3 mb-6">
+              <input 
+                v-model="nuevoColaborador" 
+                type="email" 
+                placeholder="correo@upao.edu.pe" 
+                required
+                class="w-full px-4 py-3 rounded-lg border border-outline bg-surface-container-lowest text-on-surface focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors"
+              />
+              <button 
+                type="submit" 
+                :disabled="agregandoColaborador"
+                class="w-full py-2.5 rounded-lg bg-secondary-container text-on-secondary-container font-label-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <span v-if="agregandoColaborador" class="material-symbols-outlined text-[18px] animate-spin">refresh</span>
+                <span v-else class="material-symbols-outlined text-[18px]">person_add</span>
+                Añadir Colaborador
+              </button>
+            </form>
+
+            <div class="space-y-3 max-h-48 overflow-y-auto pr-2">
+              <div v-if="cargandoColaboradores" class="flex justify-center p-4">
+                <span class="material-symbols-outlined animate-spin text-primary">sync</span>
+              </div>
+              <div v-else-if="colaboradores.length === 0" class="text-center p-4 text-on-surface-variant font-body-sm">
+                No hay colaboradores añadidos.
+              </div>
+              <div 
+                v-else
+                v-for="col in colaboradores" 
+                :key="col.invitado_email"
+                class="flex items-center justify-between p-3 rounded-lg bg-surface-container-lowest border border-outline-variant"
+              >
+                <span class="font-body-md text-on-surface truncate pr-2" :title="col.invitado_email">
+                  {{ col.invitado_email }}
+                </span>
+                <button 
+                  @click="handleRemoveColaborador(col.invitado_email)" 
+                  class="text-error hover:bg-error-container p-2 rounded-full transition-colors flex-shrink-0 flex items-center justify-center"
+                  title="Eliminar colaborador"
+                >
+                  <span class="material-symbols-outlined text-[18px]">delete</span>
+                </button>
+              </div>
+            </div>
+            <p v-if="colaboradorError" class="text-error text-sm mt-3">{{ colaboradorError }}</p>
+          </section>
 
           <!-- Herramientas Dev Card -->
           <section class="bg-surface rounded-card p-6 shadow-[0_2px_8px_rgba(0,0,0,0.05)] border border-primary-container mt-4">
@@ -181,7 +235,7 @@
 import { signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
 import { selectFolder, processAllData } from "../services/drive";
-import { clearDatabase, exportAllRecommendations } from "../services/api";
+import { clearDatabase, exportAllRecommendations, fetchColaboradores, addColaborador, removeColaborador } from "../services/api";
 import { useAppStore } from "../store/app";
 import { useRouter } from "vue-router";
 import { ref, computed, onMounted } from "vue";
@@ -194,6 +248,13 @@ export default {
     const router = useRouter();
     const userEmail = ref("");
     const isSynced = ref(false);
+    
+    // Colaboradores
+    const colaboradores = ref([]);
+    const nuevoColaborador = ref("");
+    const cargandoColaboradores = ref(false);
+    const agregandoColaborador = ref(false);
+    const colaboradorError = ref("");
     
     // Estado de procesamiento individual
     const processingState = ref({
@@ -240,7 +301,7 @@ export default {
       return Object.values(processingState.value).some(v => v);
     });
 
-    onMounted(() => {
+    onMounted(async () => {
       const user = auth.currentUser;
       if (user) {
         userEmail.value = user.email || "Usuario";
@@ -269,6 +330,8 @@ export default {
           console.error("Error parseando synced folders:", e);
         }
       }
+
+      await loadColaboradores();
     });
 
     const goBack = () => {
@@ -288,6 +351,44 @@ export default {
         router.push('/login');
       } catch (error) {
         console.error("Error cerrando sesión:", error);
+      }
+    };
+
+    const loadColaboradores = async () => {
+      try {
+        cargandoColaboradores.value = true;
+        colaboradorError.value = "";
+        colaboradores.value = await fetchColaboradores();
+      } catch (err) {
+        colaboradorError.value = "Error al cargar colaboradores";
+      } finally {
+        cargandoColaboradores.value = false;
+      }
+    };
+
+    const handleAddColaborador = async () => {
+      if (!nuevoColaborador.value.trim()) return;
+      try {
+        agregandoColaborador.value = true;
+        colaboradorError.value = "";
+        await addColaborador(nuevoColaborador.value.trim());
+        nuevoColaborador.value = "";
+        await loadColaboradores();
+      } catch (err) {
+        colaboradorError.value = err.message || "Error al añadir colaborador";
+      } finally {
+        agregandoColaborador.value = false;
+      }
+    };
+
+    const handleRemoveColaborador = async (email) => {
+      if (!confirm(`¿Eliminar al colaborador ${email}?`)) return;
+      try {
+        colaboradorError.value = "";
+        await removeColaborador(email);
+        await loadColaboradores();
+      } catch (err) {
+        colaboradorError.value = err.message || "Error al eliminar colaborador";
       }
     };
 
@@ -440,7 +541,14 @@ export default {
       confirmAndProcess,
       showConfidentialityModal,
       acceptedTerms,
-      isSynced
+      isSynced,
+      colaboradores,
+      nuevoColaborador,
+      cargandoColaboradores,
+      agregandoColaborador,
+      colaboradorError,
+      handleAddColaborador,
+      handleRemoveColaborador
     };
   },
 };
