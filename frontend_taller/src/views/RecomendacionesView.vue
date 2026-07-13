@@ -95,30 +95,15 @@
               </div>
             </div>
 
-            <!-- Etiquetas de Confianza y Tecnologías -->
-            <div class="flex flex-wrap gap-2 mb-4 relative z-10">
-              <span 
-                class="px-3 py-1 font-label-md text-label-md rounded-[8px] border"
-                :class="{
-                  'bg-green-50 text-green-700 border-green-200': docente.confianza_etiqueta === 'Confianza Muy Alta',
-                  'bg-blue-50 text-blue-700 border-blue-200': docente.confianza_etiqueta === 'Confianza Alta',
-                  'bg-yellow-50 text-yellow-700 border-yellow-200': docente.confianza_etiqueta === 'Confianza Media',
-                  'bg-red-50 text-red-700 border-red-200': docente.confianza_etiqueta === 'Confianza Baja'
-                }"
-              >
-                {{ docente.confianza_etiqueta }}
-              </span>
-            </div>
-            
-            <div v-if="docente.evidencias?.entidades_clave?.length" class="flex flex-wrap gap-2 mb-6 relative z-10">
+<div v-if="docente.perfil_tecnico?.length" class="flex flex-wrap gap-2 mb-6 relative z-10">
               <span
-                v-for="e in docente.evidencias.entidades_clave.slice(0, 5)"
-                :key="e"
+                v-for="(item, idx) in docente.perfil_tecnico.slice(0, 5)"
+                :key="idx"
                 class="px-2 py-1 rounded-[8px] bg-surface-container text-on-surface-variant font-label-md text-label-md"
               >
-                {{ e }}
+                {{ item.es }}
               </span>
-              <span v-if="docente.evidencias.entidades_clave.length > 5" class="px-2 py-1 rounded-[8px] bg-surface-container text-on-surface-variant font-label-md text-label-md">...</span>
+              <span v-if="docente.perfil_tecnico.length > 5" class="px-2 py-1 rounded-[8px] bg-surface-container text-on-surface-variant font-label-md text-label-md">...</span>
             </div>
 
             <!-- XAI Section -->
