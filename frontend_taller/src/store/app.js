@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia';
 import { fetchCursos, fetchRecommendations } from '../services/api';
+import { db } from '../services/firebase';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 const APP_STATE_KEY = 'appState';
 
@@ -8,6 +10,7 @@ export const useAppStore = defineStore('app', {
     user: null,
     googleAccessToken: null,
     firebaseIdToken: null,
+    unsubscribeFirestore: null,
 
     folders: {
       cvs: null,
@@ -50,6 +53,11 @@ export const useAppStore = defineStore('app', {
     setUser(user) {
       this.user = user;
       this.saveState();
+      if (user) {
+        this.initFirestoreListener();
+      } else {
+        this.stopFirestoreListener();
+      }
     },
 
     setTokens({ google, firebase }) {
@@ -59,6 +67,37 @@ export const useAppStore = defineStore('app', {
       // Persistencia de tokens
       if (google) localStorage.setItem('googleToken', google);
       if (firebase) localStorage.setItem('firebase_id_token', firebase);
+    },
+
+    initFirestoreListener() {
+      if (!this.user || !this.user.email) return;
+      if (this.unsubscribeFirestore) return;
+
+      console.log("🟢 Iniciando listener de Firestore para:", this.user.email);
+      
+      const q = query(
+        collection(db, "notificaciones"),
+        where("propietario_email", "==", this.user.email)
+      );
+
+      this.unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "added" || change.type === "modified") {
+            const data = change.doc.data();
+            console.log("🔔 Notificación Firestore en tiempo real:", data);
+            window.dispatchEvent(new CustomEvent('fs-notification', { detail: data }));
+          }
+        });
+      }, (error) => {
+        console.error("🔴 Error en listener de Firestore:", error);
+      });
+    },
+
+    stopFirestoreListener() {
+      if (this.unsubscribeFirestore) {
+        this.unsubscribeFirestore();
+        this.unsubscribeFirestore = null;
+      }
     },
 
     // ==================== FOLDERS ====================
@@ -127,10 +166,13 @@ export const useAppStore = defineStore('app', {
           console.log(`✅ ${cursosData.length} cursos cargados en ${ciclos.length} ciclos`);
           this.saveState();
           return true;
+        } else {
+          console.log('⚠️ No hay cursos en el backend. Limpiando estado local.');
+          this.data.ciclos = [];
+          this.data.cursos = {};
+          this.saveState();
+          return false;
         }
-
-        console.log('⚠️ No hay cursos en el backend');
-        return false;
       } catch (error) {
         console.error('❌ Error cargando cursos:', error);
         throw error;

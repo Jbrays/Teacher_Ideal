@@ -25,7 +25,11 @@ test_*.py
 reset_all.py
 clear_history.py
 list_models.py
-scripts/
+/scripts/
+
+# Caches locales de modelos y embeddings
+.cache/
+*.pkl
 
 # Node/Frontend
 node_modules/

@@ -1,6 +1,6 @@
 const API_CONFIG = {
   development: { baseURL: 'http://localhost:8000' },
-  production: { baseURL: import.meta.env.VITE_API_BASE_URL || 'https://vektora-5ymh5ybzya-uc.a.run.app' }
+  production: { baseURL: import.meta.env.VITE_API_BASE_URL || 'https://vektora-121734839794.us-central1.run.app' /* force cache bust */ }
 };
 
 const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
@@ -9,6 +9,12 @@ const API_BASE_URL = isDev ? API_CONFIG.development.baseURL : API_CONFIG.product
 export function apiURL(endpoint) {
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   return `${API_BASE_URL}${path}`;
+}
+
+export function wsURL(endpoint) {
+  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const wsBase = API_BASE_URL.replace(/^http/, 'ws');
+  return `${wsBase}${path}`;
 }
 
 import { auth } from './firebase';

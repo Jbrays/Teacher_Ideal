@@ -25,6 +25,7 @@ psycopg2-binary==2.9.9  # Driver para PostgreSQL (Cloud SQL)
 
 # Validación de datos
 pydantic>=2.8.0
+pydantic-settings>=2.0.0
 
 # Utilidades
 python-dotenv==1.0.0

@@ -1,20 +1,35 @@
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, JSON, Boolean, Index
+from sqlalchemy import (
+    Column, Integer, String, Text, Float, DateTime, ForeignKey, JSON, Boolean, Index, UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .db_session import Base
 
 
+class Colaborador(Base):
+    __tablename__ = "colaboradores"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    propietario_email = Column(String, nullable=False, index=True)
+    invitado_email = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('propietario_email', 'invitado_email', name='uq_colaboracion'),
+    )
+
+    def __repr__(self):
+        return f"<Colaborador(propietario='{self.propietario_email}', invitado='{self.invitado_email}')>"
+
 class Docente(Base):
     __tablename__ = "docentes"
     
     id = Column(Integer, primary_key=True, index=True)
-    id_upao = Column(String, unique=True, index=True, nullable=True) # ID extraído de los horarios
+    propietario_email = Column(String, nullable=False, index=True, server_default="legacy@upao.edu.pe")
     drive_file_id = Column(String, unique=True, index=True)
     nombre = Column(String, nullable=False, index=True)
-    email = Column(String, nullable=True)
     grado = Column(String, nullable=True)
-    entidades_clave = Column(JSON, default=list) # Reemplaza a las 5 columnas anteriores
-    competencias_tecnicas = Column(Text, nullable=True) # Reemplaza a perfil_sintetico/cv_text
+    perfil_tecnico = Column(JSON, default=list)
     embedding_version = Column(String, default="v1.0")
     embedding_hash = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -29,11 +44,11 @@ class Curso(Base):
     __tablename__ = "cursos"
     
     id = Column(Integer, primary_key=True, index=True)
+    propietario_email = Column(String, nullable=False, index=True, server_default="legacy@upao.edu.pe")
     drive_file_id = Column(String, unique=True, index=True)
     nombre = Column(String, nullable=False, index=True)
-    codigo = Column(String, nullable=True)
     ciclo = Column(Integer, nullable=True, default=1, index=True)
-    temas = Column(JSON, default=list)  # Temas semanales extraídos del sílabo
+    perfil_tecnico = Column(JSON, default=list)
     embedding_version = Column(String, default="v1.0")
     embedding_hash = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -49,9 +64,9 @@ class Historial(Base):
     __tablename__ = "historiales"
     
     id = Column(Integer, primary_key=True, index=True)
+    propietario_email = Column(String, nullable=False, index=True, server_default="legacy@upao.edu.pe")
     nombre_docente = Column(String, nullable=False, index=True)
     nombre_curso = Column(String, nullable=False, index=True)
-    veces = Column(Integer, default=1)
     ultima_vez = Column(String, nullable=False)
 
     __table_args__ = (
@@ -59,13 +74,14 @@ class Historial(Base):
     )
 
     def __repr__(self):
-        return f"<Historial(nombre_docente='{self.nombre_docente}', curso='{self.nombre_curso}', veces={self.veces})>"
+        return f"<Historial(nombre_docente='{self.nombre_docente}', curso='{self.nombre_curso}')>"
 
 
 class Recomendacion(Base):
     __tablename__ = "recomendaciones"
     
     id = Column(Integer, primary_key=True, index=True)
+    propietario_email = Column(String, nullable=False, index=True, server_default="legacy@upao.edu.pe")
     curso_id = Column(Integer, ForeignKey("cursos.id"), nullable=False)
     docente_id = Column(Integer, ForeignKey("docentes.id"), nullable=False)
     score = Column(Float, nullable=False)
@@ -84,12 +100,10 @@ class RecomendacionCache(Base):
     __tablename__ = "recomendaciones_cache"
     
     id = Column(Integer, primary_key=True, index=True)
+    propietario_email = Column(String, nullable=False, index=True, server_default="legacy@upao.edu.pe")
     curso_id = Column(Integer, ForeignKey("cursos.id", ondelete="CASCADE"), nullable=False)
     docente_id = Column(Integer, ForeignKey("docentes.id", ondelete="CASCADE"), nullable=False)
     score_combinado = Column(Float, nullable=False)
-    score_est = Column(Float, nullable=False, default=0.0)
-    score_tac = Column(Float, nullable=False, default=0.0)
-    evidencias = Column(JSON, default=list)
     shap_explanations = Column(JSON, default=dict)
     version_algoritmo = Column(String(50), default="sbert_v1.1")
     embed_version = Column(String(50), default="v1.1")
@@ -107,16 +121,115 @@ class RecomendacionCache(Base):
         return f"<RecomendacionCache(curso_id={self.curso_id}, docente_id={self.docente_id}, score={self.score_combinado:.2f})>"
 
 
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    propietario_email = Column(String, nullable=False, index=True, server_default="legacy@upao.edu.pe")
+    usuario_email = Column(String, nullable=False, index=True)
+    accion = Column(String, nullable=False)
+    detalles = Column(Text, nullable=True)
+    fecha_hora = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<AuditLog(usuario='{self.usuario_email}', accion='{self.accion}')>"
+
 class WebhookLog(Base):
     __tablename__ = "webhook_logs"
     
     id = Column(Integer, primary_key=True, index=True)
+    propietario_email = Column(String, nullable=False, index=True, server_default="legacy@upao.edu.pe")
     drive_file_id = Column(String, nullable=False, index=True)
     evento_tipo = Column(String, nullable=False) # CREATE, UPDATE, DELETE
     entidad = Column(String, nullable=False)     # CV, SILABO, HORARIO
     status = Column(String, nullable=False)      # SUCCESS, FAILED
     error_message = Column(Text, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
         return f"<WebhookLog(id={self.id}, evento='{self.evento_tipo}', status='{self.status}')>"
+
+
+class Nodo(Base):
+    """
+    Catálogo de nodos de la taxonomía compartida. Se sincroniza con
+    backend/taxonomy/taxonomy.json; los ids son estables y no se regeneran.
+    """
+    __tablename__ = "nodos"
+
+    id = Column(String, primary_key=True, index=True)
+    parent_id = Column(String, ForeignKey("nodos.id"), nullable=True, index=True)
+    name = Column(String, nullable=False)
+    node_type = Column(String, nullable=False)  # root | branch | leaf
+    aliases = Column(JSON, default=list)
+    domain = Column(String, nullable=True)
+    version = Column(String, default="1.0.0")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    children = relationship("Nodo", backref="parent", remote_side=[id])
+
+    def __repr__(self):
+        return f"<Nodo(id='{self.id}', name='{self.name}')>"
+
+
+class DocenteNodo(Base):
+    """
+    Perfil técnico normalizado de un docente. Cada fila es un nodo de la
+    taxonomía que el docente domina, con su peso acumulado y las evidencias
+    textuales originales que lo sustentan.
+    """
+    __tablename__ = "docente_nodos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    docente_id = Column(Integer, ForeignKey("docentes.id", ondelete="CASCADE"), nullable=False)
+    nodo_id = Column(String, ForeignKey("nodos.id", ondelete="CASCADE"), nullable=False)
+    peso = Column(Float, nullable=False, default=1.0)
+    evidencias = Column(JSON, default=list)
+    explicito = Column(Boolean, default=True)
+    recencia = Column(String, nullable=True)
+    version = Column(String, default="1.0.0")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    docente = relationship("Docente")
+    nodo = relationship("Nodo")
+
+    __table_args__ = (
+        UniqueConstraint("docente_id", "nodo_id", name="uq_docente_nodo"),
+        Index("idx_docente_nodo_docente", "docente_id"),
+        Index("idx_docente_nodo_nodo", "nodo_id"),
+    )
+
+    def __repr__(self):
+        return f"<DocenteNodo(docente_id={self.docente_id}, nodo_id='{self.nodo_id}', peso={self.peso})>"
+
+
+class CursoNodo(Base):
+    """
+    Requisitos técnicos de un curso expresados como nodos de la taxonomía.
+    El peso_centralidad refleja cuántas semanas del temario tocan ese nodo.
+    """
+    __tablename__ = "curso_nodos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    curso_id = Column(Integer, ForeignKey("cursos.id", ondelete="CASCADE"), nullable=False)
+    nodo_id = Column(String, ForeignKey("nodos.id", ondelete="CASCADE"), nullable=False)
+    peso_centralidad = Column(Float, nullable=False, default=1.0)
+    semanas = Column(JSON, default=list)
+    evidencias = Column(JSON, default=list)
+    version = Column(String, default="1.0.0")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    curso = relationship("Curso")
+    nodo = relationship("Nodo")
+
+    __table_args__ = (
+        UniqueConstraint("curso_id", "nodo_id", name="uq_curso_nodo"),
+        Index("idx_curso_nodo_curso", "curso_id"),
+        Index("idx_curso_nodo_nodo", "nodo_id"),
+    )
+
+    def __repr__(self):
+        return f"<CursoNodo(curso_id={self.curso_id}, nodo_id='{self.nodo_id}', centralidad={self.peso_centralidad})>"

@@ -24,8 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Pre-descargamos el modelo SBERT para que quede "horneado" en la imagen de Docker
 # Esto evita descargar gb en cada inicio del contenedor, previniendo fallos en Cloud Run
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('Qwen/Qwen3-Embedding-0.6B', trust_remote_code=True)" && \
-    python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('jaimevera1107/all-MiniLM-L6-v2-similarity-es')" && \
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-small')" && \
     chmod -R 777 /app/.cache
 
 # ¡CRÍTICO! Apagar el internet a nivel de sistema para toda la librería HuggingFace

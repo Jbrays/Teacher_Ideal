@@ -5,12 +5,14 @@ import {
   signInWithPopup,
   signOut
 } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 
 import firebaseConfig from './firebaseConfig'; // archivo separado
 
 // Inicializar Firebase inmediatamente
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
 
 export async function loginWithGoogle() {
   const provider = new GoogleAuthProvider();
@@ -31,4 +33,4 @@ export async function logoutFirebase() {
   return await signOut(auth);
 }
 
-export { auth };
+export { auth, db };
