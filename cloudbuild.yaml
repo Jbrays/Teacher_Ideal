@@ -23,7 +23,7 @@ steps:
       - 'push'
       - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$BUILD_ID'
 
-  # 3. Deploy a Cloud Run (Solo actualiza la imagen del servicio gestionado por Terraform)
+  # 3. Deploy a Cloud Run (flags esenciales; recursos gestionados por Terraform cuando se aplique)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -33,6 +33,14 @@ steps:
       - '--image=$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$BUILD_ID'
       - '--region=$_DEPLOY_REGION'
       - '--project=$PROJECT_ID'
+      - '--memory=8Gi'
+      - '--cpu=2'
+      - '--set-secrets=DATABASE_URL=database-url:latest,FIREBASE_CREDENTIALS_JSON=firebase-credentials-json:latest'
+      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+      - '--concurrency=80'
+      - '--timeout=3600'
+      - '--no-cpu-throttling'
+      - '--cpu-boost'
 
 images:
   - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$BUILD_ID'
