@@ -35,9 +35,6 @@ def get_db():
 
 # Crear todas las tablas
 def init_db():
-    from . import models  # Importar modelos
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Base de datos inicializada")
-    except Exception as e:
-        logger.warning(f"⚠️ Advertencia: Error conectando a la base de datos en el arranque. El servidor iniciará, pero las operaciones a DB fallarán: {e}", exc_info=True)
+    from . import models
+    Base.metadata.create_all(bind=engine)
+    logger.info("Base de datos inicializada")
