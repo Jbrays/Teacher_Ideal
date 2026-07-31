@@ -470,7 +470,7 @@ export default {
             throw new Error(`Error vinculando carpetas: ${result.error || 'Desconocido'}`);
         }
 
-        processStatus.value = "✅ Configuración guardada y webhooks activos.";
+        processStatus.value = `✅ ${result.messages.join(" ")}`;
         
         // Guardar exitosos en localStorage
         const syncedData = {

@@ -12,6 +12,7 @@ from backend.services.schedule_service import ScheduleService
 from backend.services.taxonomy_service import TaxonomyService
 from backend.services.drive_token_service import get_valid_access_token
 from backend.core import state
+from backend.database.models import WebhookLog, UserDriveToken
 
 
 logger = logging.getLogger(__name__)
@@ -25,45 +26,73 @@ def process_historical_queue(archivos: list, entidad_inferida: str, folder_id: s
 
   db = SessionLocal()
   try:
+    contexts = []
     for archivo in archivos:
       archivo_nombre = archivo.get("name", "desconocido")
-      state.memoria_tareas[archivo["id"]] = (archivo_nombre, email)
-      crud.create_webhook_log(db, archivo["id"], "add", entidad_inferida, "received", propietario_email=email)
+      contexts.append((archivo["id"], archivo_nombre))
+      db.add(WebhookLog(
+        drive_file_id=archivo["id"],
+        evento_tipo="add",
+        entidad=entidad_inferida,
+        status="received",
+        propietario_email=email,
+      ))
+    db.commit()
+    for file_id, archivo_nombre in contexts:
+      state.memoria_tareas[file_id] = (archivo_nombre, email)
       logger.info(f"Archivo historico {archivo_nombre} encolado como {entidad_inferida}.")
+    return len(contexts)
+  except Exception:
+    db.rollback()
+    logger.exception("No se pudo guardar la cola historica de %s", entidad_inferida)
+    raise
   finally:
     db.close()
 
 def process_historical_queue_all(archivos_sched: list, archivos_syl: list, archivos_cv: list, access_token: str, propietario_email: str = "legacy@upao.edu.pe"):
   """Encola horarios, sílabos y CVs. El access_token se usa solo para seed; la descarga renueva desde DB."""
-  from backend.database.models import UserDriveToken
   from backend.services.drive_token_service import upsert_tokens
 
   email = (propietario_email or "").strip().lower()
   db = SessionLocal()
   try:
     if access_token and email:
-      try:
-        existing = db.query(UserDriveToken).filter(UserDriveToken.email == email).first()
-        upsert_tokens(
-          db,
-          email,
-          access_token,
-          refresh_token=existing.refresh_token if existing else None,
-          expires_in=3500,
-        )
-      except Exception as e:
-        logger.warning("No se pudo upsert access_token al encolar: %s", e)
+      existing = db.query(UserDriveToken).filter(UserDriveToken.email == email).first()
+      upsert_tokens(
+        db,
+        email,
+        access_token,
+        refresh_token=existing.refresh_token if existing else None,
+        expires_in=3500,
+        commit=False,
+      )
 
+    contexts = []
     def encolar(archivos, entidad_real):
       for archivo in archivos:
         archivo_nombre = archivo.get("name", "desconocido")
-        state.memoria_tareas[archivo["id"]] = (archivo_nombre, email)
-        crud.create_webhook_log(db, archivo["id"], "add", entidad_real, "received", propietario_email=email)
-        logger.info(f"Archivo {archivo_nombre} encolado como {entidad_real}.")
+        contexts.append((archivo["id"], archivo_nombre, entidad_real))
+        db.add(WebhookLog(
+          drive_file_id=archivo["id"],
+          evento_tipo="add",
+          entidad=entidad_real,
+          status="received",
+          propietario_email=email,
+        ))
 
     encolar(archivos_sched, "horario")
     encolar(archivos_syl, "curso")
     encolar(archivos_cv, "docente")
+    db.commit()
+
+    for file_id, archivo_nombre, entidad_real in contexts:
+      state.memoria_tareas[file_id] = (archivo_nombre, email)
+      logger.info(f"Archivo {archivo_nombre} encolado como {entidad_real}.")
+    return len(contexts)
+  except Exception:
+    db.rollback()
+    logger.exception("No se pudo guardar atomicamente la cola historica")
+    raise
   finally:
     db.close()
 

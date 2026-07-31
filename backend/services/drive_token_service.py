@@ -40,6 +40,8 @@ def upsert_tokens(
   access_token: str,
   refresh_token: Optional[str] = None,
   expires_in: int = 3600,
+  *,
+  commit: bool = True,
 ) -> UserDriveToken:
   email = (email or "").strip().lower()
   if not email or not access_token:
@@ -64,8 +66,11 @@ def upsert_tokens(
     )
     db.add(row)
 
-  db.commit()
-  db.refresh(row)
+  if commit:
+    db.commit()
+    db.refresh(row)
+  else:
+    db.flush()
   logger.info("Tokens Drive guardados para %s (refresh=%s)", email, bool(row.refresh_token))
   return row
 

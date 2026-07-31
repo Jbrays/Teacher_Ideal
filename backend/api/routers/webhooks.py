@@ -56,8 +56,10 @@ def _persist_access_token(email: str, google_token: str) -> None:
   db = SessionLocal()
   try:
     upsert_tokens(db, email, google_token, expires_in=3500)
-  except Exception as e:
-    logger.warning("No se pudo persistir access_token Drive: %s", e)
+  except Exception:
+    db.rollback()
+    logger.exception("No se pudo persistir access_token Drive")
+    raise
   finally:
     db.close()
 
@@ -105,11 +107,12 @@ async def config_webhook(
     response = drive_service.register_webhook(folder_id, webhook_url, channel_id)
     if response:
       archivos = drive_service.list_files_in_folder(folder_id, file_types=None, recursive=True)
-      background_tasks.add_task(process_historical_queue, archivos, "desconocida", folder_id, email)
+      queued = process_historical_queue(archivos, "desconocida", folder_id, email)
       return {
         "success": True,
-        "message": f"Webhook activo. Procesando {len(archivos)} archivos preexistentes.",
+        "message": f"Webhook activo. {queued} archivos en cola.",
         "channel_id": channel_id,
+        "queued_count": queued,
       }
     raise HTTPException(status_code=500, detail="No se pudo registrar el webhook en Google Drive.")
   except HTTPException:
@@ -134,8 +137,6 @@ async def config_all_webhooks(
     if not drive_service.build_service(google_token):
       raise HTTPException(status_code=500, detail="Error conectando con Drive")
 
-    _persist_access_token(email, google_token)
-
     webhook_url = f"{_webhook_base_url()}/api/webhooks/drive"
 
     def register_and_list(folder_id: str, entidad: str):
@@ -146,19 +147,27 @@ async def config_all_webhooks(
       state.folder_tokens[ch_id] = email
       state.folder_propietarios[ch_id] = email
       state.canal_a_entidad[ch_id] = entidad
-      drive_service.register_webhook(folder_id, webhook_url, ch_id)
+      response = drive_service.register_webhook(folder_id, webhook_url, ch_id)
+      if not response:
+        raise RuntimeError(f"No se pudo registrar el webhook para la carpeta {folder_id}")
       return drive_service.list_files_in_folder(folder_id, file_types=None, recursive=True)
 
     archivos_sched = register_and_list(request.schedules_folder_id, "horario")
     archivos_syl = register_and_list(request.syllabi_folder_id, "curso")
     archivos_cv = register_and_list(request.cvs_folder_id, "docente")
 
-    background_tasks.add_task(
-      process_historical_queue_all, archivos_sched, archivos_syl, archivos_cv, google_token, email
+    queued = process_historical_queue_all(
+      archivos_sched, archivos_syl, archivos_cv, google_token, email
     )
 
     total = len(archivos_sched) + len(archivos_syl) + len(archivos_cv)
-    return {"success": True, "message": f"Webhooks activos. {total} archivos encolados."}
+    if queued != total:
+      raise RuntimeError(f"Se esperaban {total} archivos, pero se encolaron {queued}")
+    return {
+      "success": True,
+      "message": f"Webhooks activos. {queued} archivos en cola.",
+      "queued_count": queued,
+    }
   except HTTPException:
     raise
   except Exception as e:

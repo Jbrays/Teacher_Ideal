@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
@@ -16,8 +16,16 @@ if not DATABASE_URL:
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    pool_recycle=600
+    pool_recycle=600,
+    pool_reset_on_return="rollback",
 )
+
+
+@event.listens_for(engine, "connect")
+def _force_read_write_transactions(dbapi_connection, _connection_record):
+    """Evita heredar sesiones read-only desde un endpoint PostgreSQL pooler."""
+    if hasattr(dbapi_connection, "set_session"):
+        dbapi_connection.set_session(readonly=False)
 
 # Crear SessionLocal
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

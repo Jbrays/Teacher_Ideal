@@ -73,7 +73,8 @@
 import { auth } from "../services/firebase";
 import { useAppStore } from "../store/app";
 import { useRouter } from "vue-router";
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
+import { fetchSystemStatus } from "../services/api";
 
 export default {
   name: "HomeView",
@@ -83,6 +84,12 @@ export default {
     const router = useRouter();
     const userName = ref("Usuario");
     const isProcessingBackground = ref(false);
+    let pollingInterval = null;
+
+    const checkSystemStatus = async () => {
+      const status = await fetchSystemStatus();
+      isProcessingBackground.value = status.is_processing;
+    };
 
     onMounted(async () => {
       // El usuario ya está autenticado (verificado por el router guard)
@@ -91,6 +98,9 @@ export default {
       if (user) {
         userName.value = user.displayName || "Usuario";
       }
+
+      await checkSystemStatus();
+      pollingInterval = setInterval(checkSystemStatus, 3000);
       
       // Intentar restaurar estado o cargar datos
       const restored = store.restoreState();
@@ -110,6 +120,10 @@ export default {
           // Quedarse en home para que configure
         }
       }
+    });
+
+    onUnmounted(() => {
+      if (pollingInterval) clearInterval(pollingInterval);
     });
 
     return {
