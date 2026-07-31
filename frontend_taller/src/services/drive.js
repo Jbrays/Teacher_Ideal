@@ -1,17 +1,35 @@
 import { configWebhook, configAllWebhooks } from './api';
-import { loginWithGoogle, refreshAndSyncDriveAccessToken } from './firebase';
+import {
+  auth,
+  authorizeDriveOffline,
+  refreshAndSyncDriveAccessToken
+} from './firebase';
 
 export { configWebhook, configAllWebhooks };
 
 async function ensureFreshGoogleToken() {
+  const sessionUid = auth.currentUser?.uid;
+  if (!sessionUid) {
+    throw new Error('La sesión no está activa. Inicia sesión nuevamente.');
+  }
+
   try {
     const token = await refreshAndSyncDriveAccessToken();
     if (token) return token;
   } catch (e) {
-    console.warn('Refresh silencioso de Drive falló, reintentando con login:', e);
+    console.warn('Refresh silencioso de Drive falló; solicitando autorización para la sesión actual:', e);
   }
-  const res = await loginWithGoogle();
-  return res?.googleToken || localStorage.getItem('googleToken');
+
+  await authorizeDriveOffline({ forceConsent: true });
+  const token = await refreshAndSyncDriveAccessToken();
+
+  if (!auth.currentUser || auth.currentUser.uid !== sessionUid) {
+    throw new Error('La sesión cambió durante la autorización de Drive. Vuelve a iniciar sesión.');
+  }
+  if (!token) {
+    throw new Error('No se pudo renovar el acceso a Drive para la sesión actual.');
+  }
+  return token;
 }
 
 let pickerApiLoaded = false;
@@ -99,8 +117,17 @@ export async function processAllData(folders) {
     messages: []
   };
 
+  const sessionUid = auth.currentUser?.uid;
+  if (!sessionUid) {
+    throw new Error('La sesión no está activa. Inicia sesión nuevamente.');
+  }
+
   // Siempre token fresco antes de encolar (el backend además renueva con refresh_token)
   let googleToken = await ensureFreshGoogleToken();
+
+  if (!auth.currentUser || auth.currentUser.uid !== sessionUid) {
+    throw new Error('La sesión cambió antes de iniciar el procesamiento. Vuelve a iniciar sesión.');
+  }
 
   if (!googleToken) {
     alert("No se encontró el token de Google. Por favor, inicie sesión de nuevo.");

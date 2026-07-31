@@ -43,10 +43,19 @@ function loadGisScript() {
   });
 }
 
-async function getFirebaseAuthHeaders() {
+function requireSameFirebaseSession(expectedUid) {
   const user = auth.currentUser;
   if (!user) throw new Error('No hay sesión Firebase');
+  if (expectedUid && user.uid !== expectedUid) {
+    throw new Error('La sesión Firebase cambió durante la autorización de Drive');
+  }
+  return user;
+}
+
+async function getFirebaseAuthHeaders(expectedUid) {
+  const user = requireSameFirebaseSession(expectedUid);
   const token = await user.getIdToken();
+  requireSameFirebaseSession(expectedUid);
   return {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
@@ -62,6 +71,10 @@ async function getFirebaseAuthHeaders() {
 export async function authorizeDriveOffline({ forceConsent = true } = {}) {
   await loadGisScript();
 
+  const sessionUser = requireSameFirebaseSession();
+  const sessionUid = sessionUser.uid;
+  const sessionEmail = sessionUser.email;
+
   return new Promise((resolve, reject) => {
     try {
       const client = window.google.accounts.oauth2.initCodeClient({
@@ -72,8 +85,10 @@ export async function authorizeDriveOffline({ forceConsent = true } = {}) {
         access_type: 'offline',
         // consent fuerza refresh_token aunque el usuario ya hubiera autorizado antes
         prompt: forceConsent ? 'consent' : '',
+        hint: sessionEmail || undefined,
         callback: async (response) => {
           try {
+            requireSameFirebaseSession(sessionUid);
             if (response.error) {
               reject(new Error(response.error));
               return;
@@ -82,7 +97,7 @@ export async function authorizeDriveOffline({ forceConsent = true } = {}) {
               reject(new Error('Google no devolvió authorization code'));
               return;
             }
-            const headers = await getFirebaseAuthHeaders();
+            const headers = await getFirebaseAuthHeaders(sessionUid);
             const res = await fetch(apiURL('/api/auth/drive/code'), {
               method: 'POST',
               headers,
@@ -119,12 +134,18 @@ export async function authorizeDriveOffline({ forceConsent = true } = {}) {
 export async function refreshAndSyncDriveAccessToken() {
   await loadGisScript();
 
+  const sessionUser = requireSameFirebaseSession();
+  const sessionUid = sessionUser.uid;
+  const sessionEmail = sessionUser.email;
+
   return new Promise((resolve, reject) => {
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_OAUTH_CLIENT_ID,
       scope: DRIVE_SCOPE,
+      hint: sessionEmail || undefined,
       callback: async (response) => {
         try {
+          requireSameFirebaseSession(sessionUid);
           if (response.error) {
             reject(new Error(response.error));
             return;
@@ -140,17 +161,15 @@ export async function refreshAndSyncDriveAccessToken() {
             String(Date.now() + ((response.expires_in || 3600) - 120) * 1000)
           );
 
-          if (auth.currentUser) {
-            const headers = await getFirebaseAuthHeaders();
-            await fetch(apiURL('/api/auth/drive/token'), {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                access_token: accessToken,
-                expires_in: response.expires_in || 3600,
-              }),
-            });
-          }
+          const headers = await getFirebaseAuthHeaders(sessionUid);
+          await fetch(apiURL('/api/auth/drive/token'), {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              access_token: accessToken,
+              expires_in: response.expires_in || 3600,
+            }),
+          });
           resolve(accessToken);
         } catch (e) {
           reject(e);
