@@ -1,6 +1,7 @@
 const API_CONFIG = {
   development: { baseURL: 'http://localhost:8000' },
-  production: { baseURL: import.meta.env.VITE_API_BASE_URL || 'https://vektora-121734839794.us-central1.run.app' /* force cache bust */ }
+  // VITE_API_BASE_URL viene del entorno / CI (portable entre proyectos GCP)
+  production: { baseURL: import.meta.env.VITE_API_BASE_URL || '' }
 };
 
 const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
@@ -9,12 +10,6 @@ const API_BASE_URL = isDev ? API_CONFIG.development.baseURL : API_CONFIG.product
 export function apiURL(endpoint) {
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   return `${API_BASE_URL}${path}`;
-}
-
-export function wsURL(endpoint) {
-  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const wsBase = API_BASE_URL.replace(/^http/, 'ws');
-  return `${wsBase}${path}`;
 }
 
 import { auth } from './firebase';
@@ -193,34 +188,11 @@ export async function deleteDocente(docenteId) {
 }
 
 /**
- * Limpiar toda la base de datos
- */
-export async function clearDatabase() {
-  try {
-    const response = await fetch(apiURL('/api/admin/clear_db'), {
-      method: 'DELETE',
-      headers: await getAuthHeaders()
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(`Error ${response.status}: ${errorData.detail || response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Error limpiando base de datos:', error);
-    throw error;
-  }
-}
-
-/**
  * Exportar todas las recomendaciones a CSV
  */
 export async function exportAllRecommendations() {
   try {
-    const response = await fetch(apiURL('/api/admin/export_recommendations'), {
+    const response = await fetch(apiURL('/api/recommend/admin/export_recommendations'), {
       method: 'GET',
       headers: await getAuthHeaders()
     });

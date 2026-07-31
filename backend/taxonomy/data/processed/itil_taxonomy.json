@@ -1,0 +1,388 @@
+{
+  "id": "itil_4",
+  "name": "ITIL 4 Management Practices",
+  "type": "root",
+  "aliases": [
+    "ITIL",
+    "ITIL 4",
+    "Information Technology Infrastructure Library"
+  ],
+  "source": "itil_4",
+  "external_id": "itil4",
+  "description": "Prácticas de gestión de servicios de TI según ITIL 4.",
+  "children": [
+    {
+      "id": "itil.general_management_practices",
+      "name": "General management practices",
+      "type": "branch",
+      "aliases": [],
+      "source": "itil_4",
+      "external_id": null,
+      "description": null,
+      "children": [
+        {
+          "id": "itil.architecture_management",
+          "name": "Architecture management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "architecture_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.continual_improvement",
+          "name": "Continual improvement",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "continual_improvement",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.information_security_management",
+          "name": "Information security management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "information_security_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.knowledge_management",
+          "name": "Knowledge management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "knowledge_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.measurement_and_reporting",
+          "name": "Measurement and reporting",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "measurement_and_reporting",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.organizational_change_management",
+          "name": "Organizational change management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "organizational_change_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.portfolio_management",
+          "name": "Portfolio management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "portfolio_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.project_management",
+          "name": "Project management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "project_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.relationship_management",
+          "name": "Relationship management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "relationship_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.risk_management",
+          "name": "Risk management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "risk_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.service_financial_management",
+          "name": "Service financial management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "service_financial_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.strategy_management",
+          "name": "Strategy management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "strategy_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.supplier_management",
+          "name": "Supplier management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "supplier_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.workforce_and_talent_management",
+          "name": "Workforce and talent management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "workforce_and_talent_management",
+          "description": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "itil.service_management_practices",
+      "name": "Service management practices",
+      "type": "branch",
+      "aliases": [],
+      "source": "itil_4",
+      "external_id": null,
+      "description": null,
+      "children": [
+        {
+          "id": "itil.availability_management",
+          "name": "Availability management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "availability_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.business_analysis",
+          "name": "Business analysis",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "business_analysis",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.capacity_and_performance_management",
+          "name": "Capacity and performance management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "capacity_and_performance_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.change_enablement",
+          "name": "Change enablement",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "change_enablement",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.incident_management",
+          "name": "Incident management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "incident_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.it_asset_management",
+          "name": "IT asset management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "it_asset_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.monitoring_and_event_management",
+          "name": "Monitoring and event management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "monitoring_and_event_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.problem_management",
+          "name": "Problem management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "problem_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.release_management",
+          "name": "Release management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "release_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.service_catalogue_management",
+          "name": "Service catalogue management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "service_catalogue_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.service_configuration_management",
+          "name": "Service configuration management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "service_configuration_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.service_continuity_management",
+          "name": "Service continuity management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "service_continuity_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.service_design",
+          "name": "Service design",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "service_design",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.service_desk",
+          "name": "Service desk",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "service_desk",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.service_level_management",
+          "name": "Service level management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "service_level_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.service_request_management",
+          "name": "Service request management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "service_request_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.service_validation_and_testing",
+          "name": "Service validation and testing",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "service_validation_and_testing",
+          "description": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "itil.technical_management_practices",
+      "name": "Technical management practices",
+      "type": "branch",
+      "aliases": [],
+      "source": "itil_4",
+      "external_id": null,
+      "description": null,
+      "children": [
+        {
+          "id": "itil.deployment_management",
+          "name": "Deployment management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "deployment_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.infrastructure_and_platform_management",
+          "name": "Infrastructure and platform management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "infrastructure_and_platform_management",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "itil.software_development_and_management",
+          "name": "Software development and management",
+          "type": "leaf",
+          "aliases": [],
+          "source": "itil_4",
+          "external_id": "software_development_and_management",
+          "description": null,
+          "children": []
+        }
+      ]
+    }
+  ]
+}

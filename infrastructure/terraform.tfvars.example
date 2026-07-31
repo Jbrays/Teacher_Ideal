@@ -1,0 +1,23 @@
+# Copia a terraform.tfvars (gitignored) y ajusta.
+# Migrar/vender: cambia project_id + cuenta gcloud; el resto se recrea con apply.
+
+project_id = "vektora-app"
+
+# Opcionales (defaults en variables.tf):
+# region                  = "us-central1"
+# service_name            = "vektora"
+# repository_name         = "teacher-ideal"
+# db_instance_name        = "vektora-db"
+# db_name                 = "vektora"
+# db_user                 = "vektora"
+# db_tier                 = "db-f1-micro"   # free trial
+# db_disk_size_gb         = 10
+# cloud_run_cpu           = "2"
+# cloud_run_memory        = "8Gi"
+# cloud_run_max_instances = 2              # free trial: ≤5
+# cloud_run_min_instances = 0
+# gemini_model_name       = "gemini-3.1-flash-lite"  # igual que backend/core/config.py
+# gemini_location         = "global"
+# cors_origins            = "https://TU_HOSTING.web.app"
+# public_invoker          = true
+# enable_firestore        = true

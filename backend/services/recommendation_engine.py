@@ -89,14 +89,14 @@ class RecommendationEngine:
         "brechas": rec.get("brechas", []),
         "matches_atomicos": rec.get("evidencias", {}).get("matches_atomicos", []),
       }
-      rec_save["version_algoritmo"] = "node_taxonomy_v1.0"
+      rec_save["version_algoritmo"] = "node_taxonomy_v1.1"
       rec_save["score_est"] = rec.get("score_nodos", 0.0)
       rec_save["score_tac"] = 0.0
       recs_to_save.append(rec_save)
 
     try:
       crud.save_recomendaciones_cache(
-        db, curso_id, recs_to_save, version_algoritmo="node_taxonomy_v1.0"
+        db, curso_id, recs_to_save, version_algoritmo="node_taxonomy_v1.1"
       )
     except Exception as e:
       logger.error(f"Error guardando caché de nodos: {e}")
@@ -147,7 +147,8 @@ class RecommendationEngine:
       if use_cache:
         cached = crud.get_recomendaciones_cache(db, curso_id, max_age_days=cache_max_age_days)
         if cached and len(cached) >= top_k:
-          if all(c.version_algoritmo == "node_taxonomy_v1.0" for c in cached):
+          # v1.1: términos de explicación en español (mención del documento)
+          if all(c.version_algoritmo == "node_taxonomy_v1.1" for c in cached):
             return self._load_node_recommendations_cache(db, cached, top_k)
 
       # 2. Saneamiento de historial

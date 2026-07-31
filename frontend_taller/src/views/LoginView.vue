@@ -42,12 +42,9 @@
       </div>
 
       <!-- Utility Footer -->
-      <div class="mt-8 text-center flex flex-col gap-2">
-        <p class="font-label-md text-label-md text-on-surface-variant">
-          ¿No tiene una cuenta administrativa? <a class="text-primary hover:underline font-semibold" href="#">Solicitar acceso</a>
-        </p>
+      <div class="mt-8 text-center">
         <p class="font-body-md text-body-md text-outline text-[12px]">
-          © 2024 Vektora. Red Segura.
+          © 2026 Vektora
         </p>
       </div>
     </main>

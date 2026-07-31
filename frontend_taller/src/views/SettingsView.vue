@@ -175,16 +175,20 @@
             </p>
 
             <!-- Actions -->
-            <div class="flex justify-end pt-6 border-t border-surface-variant">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-6 border-t border-surface-variant">
+              <p v-if="isSynced && allFoldersSelected" class="font-body-md text-body-md text-on-surface-variant">
+                Carpetas ya vinculadas. Puedes reprocesar sin volver a seleccionarlas.
+              </p>
+              <div v-else class="flex-1"></div>
               <button 
-                :disabled="!allFoldersSelected || isAnyProcessing || isSynced"
+                :disabled="!allFoldersSelected || isAnyProcessing"
                 @click="openProcessModal"
-                class="px-8 py-3 rounded-full font-label-lg text-label-lg font-medium flex items-center gap-2 shadow-sm transition-all"
-                :class="(!allFoldersSelected || isAnyProcessing || isSynced) ? 'bg-surface-dim text-outline cursor-not-allowed' : 'bg-primary text-on-primary hover:opacity-90'"
+                class="px-8 py-3 rounded-full font-label-lg text-label-lg font-medium flex items-center justify-center gap-2 shadow-sm transition-all shrink-0"
+                :class="(!allFoldersSelected || isAnyProcessing) ? 'bg-surface-dim text-outline cursor-not-allowed' : 'bg-primary text-on-primary hover:opacity-90'"
               >
                 <span class="material-symbols-outlined text-[20px]" :class="{'animate-spin': isAnyProcessing}">sync</span>
-                <span v-if="isSynced">Guardado ✓</span>
-                <span v-else-if="isAnyProcessing">Procesando...</span>
+                <span v-if="isAnyProcessing">Procesando...</span>
+                <span v-else-if="isSynced">Reprocesar</span>
                 <span v-else>Procesar Todo</span>
               </button>
             </div>
@@ -232,10 +236,9 @@
 </template>
 
 <script>
-import { signOut } from "firebase/auth";
-import { auth } from "../services/firebase";
+import { logoutFirebase } from "../services/firebase";
 import { selectFolder, processAllData } from "../services/drive";
-import { clearDatabase, exportAllRecommendations, fetchColaboradores, addColaborador, removeColaborador } from "../services/api";
+import { exportAllRecommendations, fetchColaboradores, addColaborador, removeColaborador } from "../services/api";
 import { useAppStore } from "../store/app";
 import { useRouter } from "vue-router";
 import { ref, computed, onMounted } from "vue";
@@ -265,13 +268,6 @@ export default {
     
     const exportingRecommendations = ref(false);
     
-    // Estado para verificar si el webhook está activo
-    const webhookActive = ref({
-      cvs: false,
-      syllabi: false,
-      schedules: false
-    });
-    
     const processStatus = ref("");
     const errorMessage = ref("");
     const showConfidentialityModal = ref(false);
@@ -284,9 +280,9 @@ export default {
     });
 
     const folderList = [
-      { key: "cvs", label: "CVs", icon: "📄", optional: false },
-      { key: "syllabi", label: "Sílabos", icon: "📘", optional: false },
-      { key: "schedules", label: "Horarios", icon: "📅", optional: false },
+      { key: "cvs", label: "CVs" },
+      { key: "syllabi", label: "Sílabos" },
+      { key: "schedules", label: "Horarios" },
     ];
 
     const allFoldersSelected = computed(() => {
@@ -344,10 +340,8 @@ export default {
 
     const logout = async () => {
       try {
-        await signOut(auth);
+        await logoutFirebase();
         store.clearState();
-        localStorage.removeItem('googleToken');
-        localStorage.removeItem('firebase_id_token');
         router.push('/login');
       } catch (error) {
         console.error("Error cerrando sesión:", error);
@@ -389,24 +383,6 @@ export default {
         await loadColaboradores();
       } catch (err) {
         colaboradorError.value = err.message || "Error al eliminar colaborador";
-      }
-    };
-
-    const handleClearDatabase = async () => {
-      if (confirm('¿Estás seguro de que quieres borrar TODA la base de datos? Esta acción no se puede deshacer.')) {
-        try {
-          processStatus.value = "Limpiando base de datos...";
-          errorMessage.value = "";
-          await clearDatabase();
-          store.clearState();
-          isSynced.value = false;
-          localStorage.removeItem('teacher_ideal_synced_folders');
-          alert('Base de datos limpiada con éxito.');
-          processStatus.value = "";
-        } catch (error) {
-          errorMessage.value = "Error al limpiar base de datos: " + error.message;
-          processStatus.value = "";
-        }
       }
     };
 
@@ -455,7 +431,8 @@ export default {
     };
 
     const openProcessModal = () => {
-      if (!allFoldersSelected.value || isAnyProcessing.value || isSynced.value) return;
+      // Permitir reprocesar con carpetas ya vinculadas (isSynced solo indica que ya se configuró una vez).
+      if (!allFoldersSelected.value || isAnyProcessing.value) return;
       acceptedTerms.value = false;
       showConfidentialityModal.value = true;
     };
@@ -525,13 +502,11 @@ export default {
       folderList,
       allFoldersSelected,
       processingState,
-      webhookActive,
       isAnyProcessing,
       processStatus,
       errorMessage,
       goBack,
       logout,
-      handleClearDatabase,
       handleExportRecommendations,
       exportingRecommendations,
       selectFolderHandler,

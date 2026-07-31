@@ -1,0 +1,66 @@
+{
+  "acm": {
+    "source_id": "acm_ccs_2012",
+    "version": "2012",
+    "url": "https://dl.acm.org/pb-assets/dl_ccs/acm_ccs2012-1626988337597.xml",
+    "bundled_path": "data/raw/acm_ccs_2012.xml",
+    "sha256": "49f7911725537408517d00a3a7fef2ab5600777a9e1c1b79d9a0925b868dc045",
+    "license": "ACM published classification"
+  },
+  "sfia": {
+    "source_id": "sfia_9",
+    "version": "9",
+    "url": "https://raw.githubusercontent.com/niwa/sfia-position-description-tool/master/json_source.json",
+    "bundled_path": "data/raw/sfia_9.json",
+    "sha256": "b1a622a67cb2625a2d9f6e7496e92fe04286cd96a9c4857ee20d11b558d3b2da",
+    "license": "See source distribution terms"
+  },
+  "esco_en": {
+    "source_id": "esco_1_2_1",
+    "version": "1.2.1",
+    "url": "https://ec.europa.eu/esco/download/ESCO%20dataset%20-%20v1.2.1%20-%20classification%20-%20en%20-%20csv.zip",
+    "filename": "esco_1.2.1_en.zip",
+    "sha256": "f9761b0b52be1828b38a3e5e0ae59a93a7b0ce358bc800f52f57a8b002adeb3e",
+    "license": "CC BY 4.0"
+  },
+  "esco_es": {
+    "source_id": "esco_1_2_1",
+    "version": "1.2.1",
+    "url": "https://ec.europa.eu/esco/download/ESCO%20dataset%20-%20v1.2.1%20-%20classification%20-%20es%20-%20csv.zip",
+    "filename": "esco_1.2.1_es.zip",
+    "sha256": "4d7cd2bf91533a01e41b7ad941c6a5544d905bf464581c48c090edc0e9898397",
+    "license": "CC BY 4.0"
+  },
+  "cso": {
+    "source_id": "cso_3_5",
+    "version": "3.5",
+    "url": "https://cso.kmi.open.ac.uk/download/version-3.5/CSO.3.5.csv.zip",
+    "filename": "cso_3.5.csv.zip",
+    "sha256": "5b16a3902e90b704bc90536034665022b2b3d074c7bf3fbf4291e5d6cc0aae20",
+    "license": "CC BY 4.0"
+  },
+  "cncf_glossary": {
+    "source_id": "cncf_glossary",
+    "version": "9dc6cbe5178beea4398d0d326630995121ad8066",
+    "url": "https://github.com/cncf/glossary/archive/9dc6cbe5178beea4398d0d326630995121ad8066.zip",
+    "filename": "cncf_glossary_9dc6cbe.zip",
+    "sha256": "77f0008f3556f533ed8895ac8ba2a42784b16bc6caf122424af4545473e9eba3",
+    "license": "CC BY 4.0 documentation"
+  },
+  "cncf_landscape": {
+    "source_id": "cncf_landscape",
+    "version": "e6f24c73df5929af87c30723a51b811c8f7c4a06",
+    "url": "https://raw.githubusercontent.com/cncf/landscape/e6f24c73df5929af87c30723a51b811c8f7c4a06/landscape.yml",
+    "filename": "cncf_landscape_e6f24c7.yml",
+    "sha256": "e6f26212a14eaaeb447b268ea25deac0aecbcea8ee4ff40a1de4ac274780f8aa",
+    "license": "Apache-2.0"
+  },
+  "onet": {
+    "source_id": "onet_30_3",
+    "version": "30.3",
+    "url": "https://www.onetcenter.org/dl_files/database/db_30_3_json/software_skills.json",
+    "filename": "onet_30.3_software_skills.json",
+    "sha256": "e1ff8d5a63efe78fbc1f88fc96eb770799a35a77eaca752ab250c2df69e7a15d",
+    "license": "CC BY 4.0"
+  }
+}

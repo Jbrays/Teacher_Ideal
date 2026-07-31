@@ -1,50 +1,61 @@
+# =============================================================================
+# Vektora — build & deploy (portable)
+# Usa $PROJECT_ID del proyecto de Cloud Build (no hardcodear cuenta/proyecto).
+# Sustituciones opcionales permiten renombrar servicio/repo/región sin tocar código.
+# =============================================================================
+
 substitutions:
-  _AR_HOSTNAME: us-central1-docker.pkg.dev
-  _AR_PROJECT_ID: semilleros-493300
   _AR_REPOSITORY: teacher-ideal
   _SERVICE_NAME: vektora
   _DEPLOY_REGION: us-central1
+  # Host de Artifact Registry por región (us-central1-docker.pkg.dev, etc.)
+  _AR_HOSTNAME: us-central1-docker.pkg.dev
 
 steps:
-  # 1. Build de la imagen Docker del backend
+  # 1. Build imagen Docker del backend
   - name: 'gcr.io/cloud-builders/docker'
+    id: build
     args:
       - 'build'
       - '--no-cache'
       - '-t'
-      - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$BUILD_ID'
+      - '${_AR_HOSTNAME}/$PROJECT_ID/${_AR_REPOSITORY}/${_SERVICE_NAME}:$BUILD_ID'
+      - '-t'
+      - '${_AR_HOSTNAME}/$PROJECT_ID/${_AR_REPOSITORY}/${_SERVICE_NAME}:latest'
       - '.'
       - '-f'
       - 'Dockerfile'
 
-  # 2. Push a Artifact Registry
+  # 2. Push tags a Artifact Registry del mismo proyecto
   - name: 'gcr.io/cloud-builders/docker'
+    id: push-build-id
     args:
       - 'push'
-      - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$BUILD_ID'
+      - '${_AR_HOSTNAME}/$PROJECT_ID/${_AR_REPOSITORY}/${_SERVICE_NAME}:$BUILD_ID'
 
-  # 3. Deploy a Cloud Run (flags esenciales; recursos gestionados por Terraform cuando se aplique)
+  - name: 'gcr.io/cloud-builders/docker'
+    id: push-latest
+    args:
+      - 'push'
+      - '${_AR_HOSTNAME}/$PROJECT_ID/${_AR_REPOSITORY}/${_SERVICE_NAME}:latest'
+
+  # 3. Actualizar solo la imagen de Cloud Run (resto de config = Terraform)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: deploy
     entrypoint: gcloud
     args:
       - 'run'
-      - 'deploy'
-      - '$_SERVICE_NAME'
-      - '--image=$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$BUILD_ID'
-      - '--region=$_DEPLOY_REGION'
+      - 'services'
+      - 'update'
+      - '${_SERVICE_NAME}'
+      - '--image=${_AR_HOSTNAME}/$PROJECT_ID/${_AR_REPOSITORY}/${_SERVICE_NAME}:$BUILD_ID'
+      - '--region=${_DEPLOY_REGION}'
       - '--project=$PROJECT_ID'
-      - '--memory=8Gi'
-      - '--cpu=2'
-      - '--set-secrets=DATABASE_URL=database-url:latest,FIREBASE_CREDENTIALS_JSON=firebase-credentials-json:latest'
-      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
-      - '--concurrency=80'
-      - '--timeout=3600'
-      - '--no-cpu-throttling'
-      - '--cpu-boost'
-      - '--startup-probe=periodSeconds=240,timeoutSeconds=240,failureThreshold=1,tcpSocket.port=8080'
+      - '--quiet'
 
 images:
-  - '$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/$_SERVICE_NAME:$BUILD_ID'
+  - '${_AR_HOSTNAME}/$PROJECT_ID/${_AR_REPOSITORY}/${_SERVICE_NAME}:$BUILD_ID'
+  - '${_AR_HOSTNAME}/$PROJECT_ID/${_AR_REPOSITORY}/${_SERVICE_NAME}:latest'
 
 options:
   logging: CLOUD_LOGGING_ONLY

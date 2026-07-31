@@ -91,18 +91,5 @@ class FirebaseAuth:
             logger.error(f"❌ Error obteniendo usuario: {e}", exc_info=True)
             return None
     
-    def create_custom_token(self, uid: str, additional_claims: Optional[Dict] = None) -> Optional[str]:
-        """Crear token personalizado para el usuario"""
-        try:
-            if not self.app:
-                return None
-                
-            custom_token = auth.create_custom_token(uid, additional_claims)
-            return custom_token.decode('utf-8')
-            
-        except Exception as e:
-            logger.error(f"❌ Error creando token personalizado: {e}", exc_info=True)
-            return None
-
 # Instancia global
 firebase_auth = FirebaseAuth()

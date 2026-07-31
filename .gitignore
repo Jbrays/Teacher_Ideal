@@ -12,16 +12,31 @@ venv/
 firebase-credentials.json
 vertex_credenciales.json
 taller-app-*.json
+*.pem
+*.p12
+frontend_taller/.env
+firebase-debug.log
+
+# Terraform (estado y vars locales — no commitear)
+infrastructure/.terraform/
+infrastructure/*.tfstate
+infrastructure/*.tfstate.*
+infrastructure/terraform.tfvars
+infrastructure/crash.log
+infrastructure/override.tf
+infrastructure/override.tf.json
 
 # Logs & Temporary Files
 *.log
 *.pdf
+*.docx
 
 # Personal/Debug Scripts
 debug_*.py
 inspect_*.py
 check_*.py
 test_*.py
+!tests/test_*.py
 reset_all.py
 clear_history.py
 list_models.py

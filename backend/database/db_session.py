@@ -36,5 +36,8 @@ def get_db():
 # Crear todas las tablas
 def init_db():
     from . import models
-    Base.metadata.create_all(bind=engine)
+    from .schema_migrations import migrate_database_schema
+
+    assert models
+    migrate_database_schema(engine, Base.metadata)
     logger.info("Base de datos inicializada")

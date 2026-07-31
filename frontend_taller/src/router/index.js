@@ -39,7 +39,7 @@ const getCurrentUser = () => {
 };
 
 // Guard de navegación global
-router.beforeEach(async (to, from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const requiresAuth = to.meta.requiresAuth;
   
   // Esperar a que Firebase determine el estado de autenticación

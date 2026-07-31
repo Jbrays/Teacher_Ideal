@@ -5,14 +5,21 @@
 <script>
 import { onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { onAuthStateChanged } from 'firebase/auth';
 import { useAppStore } from './store/app';
-import { logoutFirebase } from './services/firebase';
+import {
+  auth,
+  logoutFirebase,
+  startDriveTokenKeepAlive,
+  stopDriveTokenKeepAlive,
+} from './services/firebase';
 
 export default {
   setup() {
     const router = useRouter();
     const store = useAppStore();
     let inactivityTimer = null;
+    let unsubAuth = null;
     const INACTIVITY_TIME = 90 * 60 * 1000; // 90 minutos
 
     const resetTimer = () => {
@@ -39,10 +46,20 @@ export default {
       window.addEventListener('keypress', resetTimer);
       window.addEventListener('touchmove', resetTimer);
       resetTimer();
+
+      // Si hay sesión Firebase al recargar, mantener tokens Drive vivos en backend
+      unsubAuth = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          startDriveTokenKeepAlive();
+        } else {
+          stopDriveTokenKeepAlive();
+        }
+      });
     });
 
     onUnmounted(() => {
       if (inactivityTimer) clearTimeout(inactivityTimer);
+      if (unsubAuth) unsubAuth();
       window.removeEventListener('mousemove', resetTimer);
       window.removeEventListener('mousedown', resetTimer);
       window.removeEventListener('keypress', resetTimer);

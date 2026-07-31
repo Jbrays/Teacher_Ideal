@@ -19,20 +19,22 @@ RUN apt-get update && apt-get install -y \
 # Copiamos el archivo de requerimientos primero para aprovechar la caché de Docker
 COPY requirements.txt .
 
-# Instalamos las dependencias de Python (incluyendo el modelo de Spacy)
-RUN pip install --no-cache-dir -r requirements.txt
+# PyTorch CPU evita incorporar varios GB de librerías CUDA que Cloud Run no usa.
+RUN pip install --no-cache-dir torch \
+      --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Pre-descargamos el modelo SBERT para que quede "horneado" en la imagen de Docker
-# Esto evita descargar gb en cada inicio del contenedor, previniendo fallos en Cloud Run
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-small')" && \
+# El catálogo debe existir antes de generar sus vectores.
+COPY backend/ ./backend/
+
+# Hornea el modelo y los embeddings del catálogo. La primera petición no debe
+# asumir el costo de descargar el modelo ni vectorizar miles de conceptos.
+RUN python -c "from backend.services.taxonomy_embedder import TaxonomyEmbedder; TaxonomyEmbedder().build_embeddings()" && \
     chmod -R 777 /app/.cache
 
 # ¡CRÍTICO! Apagar el internet a nivel de sistema para toda la librería HuggingFace
 ENV HF_HUB_OFFLINE=1
 ENV TRANSFORMERS_OFFLINE=1
-
-# Copiamos todo el código fuente del backend al contenedor
-COPY backend/ ./backend/
 
 # Exponemos el puerto (informativo)
 EXPOSE 8080

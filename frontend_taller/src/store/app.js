@@ -19,7 +19,6 @@ export const useAppStore = defineStore('app', {
     },
 
     data: {
-      docentes: [],
       ciclos: [],
       cursos: {}
     },
@@ -36,10 +35,6 @@ export const useAppStore = defineStore('app', {
     cursosDelCiclo: (state) => {
       if (!state.currentCiclo) return [];
       return state.data.cursos[state.currentCiclo] || [];
-    },
-
-    allFoldersSelected: (state) => {
-      return !!(state.folders.cvs && state.folders.syllabi && state.folders.schedules);
     },
 
     hasData: (state) => {
@@ -102,24 +97,12 @@ export const useAppStore = defineStore('app', {
 
     // ==================== FOLDERS ====================
 
-    setFolders(folders) {
-      this.folders = { ...this.folders, ...folders };
-      this.saveState();
-    },
-
     setFolder(type, folder) {
       this.folders[type] = folder;
       this.saveState();
     },
 
     // ==================== DATA ====================
-
-    setData(data) {
-      if (data.docentes) this.data.docentes = data.docentes;
-      if (data.ciclos) this.data.ciclos = data.ciclos;
-      if (data.cursos) this.data.cursos = data.cursos;
-      this.saveState();
-    },
 
     /**
      * Cargar cursos desde el backend
@@ -276,7 +259,7 @@ export const useAppStore = defineStore('app', {
 
     clearState() {
       this.folders = { cvs: null, syllabi: null, schedules: null };
-      this.data = { docentes: [], ciclos: [], cursos: {} };
+      this.data = { ciclos: [], cursos: {} };
       this.currentCiclo = null;
       this.currentCurso = null;
       this.currentCursoNombre = null;

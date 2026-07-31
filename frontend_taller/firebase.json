@@ -1,6 +1,5 @@
 {
   "hosting": {
-    "site": "vektora",
     "public": "dist",
     "ignore": [
       "firebase.json",

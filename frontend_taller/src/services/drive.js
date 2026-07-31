@@ -1,7 +1,18 @@
 import { configWebhook, configAllWebhooks } from './api';
-import { loginWithGoogle } from './firebase';
+import { loginWithGoogle, refreshAndSyncDriveAccessToken } from './firebase';
 
 export { configWebhook, configAllWebhooks };
+
+async function ensureFreshGoogleToken() {
+  try {
+    const token = await refreshAndSyncDriveAccessToken();
+    if (token) return token;
+  } catch (e) {
+    console.warn('Refresh silencioso de Drive falló, reintentando con login:', e);
+  }
+  const res = await loginWithGoogle();
+  return res?.googleToken || localStorage.getItem('googleToken');
+}
 
 let pickerApiLoaded = false;
 
@@ -27,21 +38,11 @@ export async function initDriveAPI() {
  * Seleccionar una carpeta de Google Drive
  */
 export async function selectFolder(type) {
-  // Refrescar el token de Google si expiró (1 hora)
   let accessToken = localStorage.getItem('googleToken');
   const expiresAt = localStorage.getItem('googleToken_expires_at');
 
-  if (!accessToken || !expiresAt || Date.now() > parseInt(expiresAt)) {
-    try {
-      const res = await loginWithGoogle();
-      if (res && res.googleToken) {
-        accessToken = res.googleToken;
-        localStorage.setItem('googleToken', accessToken);
-        localStorage.setItem('googleToken_expires_at', Date.now() + 55 * 60 * 1000);
-      }
-    } catch (e) {
-      console.warn("No se pudo refrescar el token de Google, intentando con el guardado", e);
-    }
+  if (!accessToken || !expiresAt || Date.now() > parseInt(expiresAt, 10)) {
+    accessToken = await ensureFreshGoogleToken();
   }
 
   if (!accessToken) {
@@ -98,22 +99,8 @@ export async function processAllData(folders) {
     messages: []
   };
 
-  // Refrescar el token de Google si expiró (1 hora)
-  let googleToken = localStorage.getItem('googleToken');
-  const expiresAt = localStorage.getItem('googleToken_expires_at');
-
-  if (!googleToken || !expiresAt || Date.now() > parseInt(expiresAt)) {
-    try {
-      const res = await loginWithGoogle();
-      if (res && res.googleToken) {
-        googleToken = res.googleToken;
-        localStorage.setItem('googleToken', googleToken);
-        localStorage.setItem('googleToken_expires_at', Date.now() + 55 * 60 * 1000);
-      }
-    } catch (e) {
-      console.warn("No se pudo refrescar el token de Google, intentando con el guardado", e);
-    }
-  }
+  // Siempre token fresco antes de encolar (el backend además renueva con refresh_token)
+  let googleToken = await ensureFreshGoogleToken();
 
   if (!googleToken) {
     alert("No se encontró el token de Google. Por favor, inicie sesión de nuevo.");

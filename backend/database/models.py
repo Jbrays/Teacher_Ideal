@@ -151,6 +151,23 @@ class WebhookLog(Base):
         return f"<WebhookLog(id={self.id}, evento='{self.evento_tipo}', status='{self.status}')>"
 
 
+class UserDriveToken(Base):
+    """
+    Tokens OAuth de Google Drive por usuario.
+    El access_token se renueva con refresh_token mientras el usuario no revoque acceso.
+    """
+    __tablename__ = "user_drive_tokens"
+
+    email = Column(String, primary_key=True, index=True)
+    access_token = Column(Text, nullable=False)
+    refresh_token = Column(Text, nullable=True)
+    token_expiry = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<UserDriveToken(email='{self.email}', expiry={self.token_expiry})>"
+
+
 class Nodo(Base):
     """
     Catálogo de nodos de la taxonomía compartida. Se sincroniza con
@@ -164,6 +181,15 @@ class Nodo(Base):
     node_type = Column(String, nullable=False)  # root | branch | leaf
     aliases = Column(JSON, default=list)
     domain = Column(String, nullable=True)
+    source = Column(String, nullable=True, index=True)
+    source_version = Column(String, nullable=True)
+    external_id = Column(Text, nullable=True)
+    external_url = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)
+    kind = Column(String, nullable=False, default="concept", index=True)
+    labels = Column(JSON, default=dict)
+    embedding_enabled = Column(Boolean, nullable=False, default=True)
+    source_attributes = Column(JSON, default=dict)
     version = Column(String, default="1.0.0")
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -171,6 +197,53 @@ class Nodo(Base):
 
     def __repr__(self):
         return f"<Nodo(id='{self.id}', name='{self.name}')>"
+
+
+class NodoRelacion(Base):
+    """Arista tipada y trazable entre dos nodos del catálogo."""
+
+    __tablename__ = "nodo_relaciones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_nodo_id = Column(
+        String,
+        ForeignKey("nodos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    target_nodo_id = Column(
+        String,
+        ForeignKey("nodos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    relation_type = Column(String, nullable=False, index=True)
+    weight = Column(Float, nullable=False, default=0.0)
+    directed = Column(Boolean, nullable=False, default=False)
+    source = Column(String, nullable=False)
+    source_version = Column(String, nullable=True)
+    external_id = Column(Text, nullable=True)
+    provenance = Column(JSON, default=dict)
+    version = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    source_nodo = relationship("Nodo", foreign_keys=[source_nodo_id])
+    target_nodo = relationship("Nodo", foreign_keys=[target_nodo_id])
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_nodo_id",
+            "target_nodo_id",
+            "relation_type",
+            "source",
+            name="uq_nodo_relacion",
+        ),
+        Index(
+            "idx_nodo_relacion_pair",
+            "source_nodo_id",
+            "target_nodo_id",
+        ),
+    )
 
 
 class DocenteNodo(Base):

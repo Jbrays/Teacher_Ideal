@@ -152,20 +152,6 @@ export default {
       )
     );
 
-    const rankColor = (index) => {
-      if (index === 0) return "bg-yellow-500";
-      if (index === 1) return "bg-gray-400";
-      if (index === 2) return "bg-orange-500";
-      return "bg-indigo-500";
-    };
-
-    const circleStyle = (score) => {
-      const s = Math.min(Math.max(score, 0), 100);
-      return {
-        background: `conic-gradient(#6366f1 ${s}%, #e5e7eb ${s}%)`,
-      };
-    };
-
     // Cargar recomendaciones si no están ya
     onMounted(async () => {
       // Verificar si tenemos el curso en el store
@@ -245,35 +231,9 @@ export default {
       loading,
       isProcessingBackground,
       exportingPdf,
-      rankColor,
-      circleStyle,
       goBack,
       handleDelete,
       handleExportPdf,
-      getSortedShapValues: (shapExplanations) => {
-        if (!shapExplanations || typeof shapExplanations !== 'object') return {};
-        
-        // Convertir a array, ordenar por valor absoluto descendente, y reconvertir a objeto
-        return Object.entries(shapExplanations)
-          .sort(([, a], [, b]) => Math.abs(b) - Math.abs(a))
-          .slice(0, 5) // Mostrar solo los 5 factores más importantes
-          .reduce((obj, [key, value]) => {
-            obj[key] = value;
-            return obj;
-          }, {});
-      },
-      formatFeatureName: (feature) => {
-        const names = {
-          'area_match_count': 'Áreas',
-          'lenguaje_match_count': 'Lenguajes',
-          'herramienta_match_count': 'Herramientas',
-          'metodologia_match_count': 'Metodologías',
-          'contenido_match_count': 'Contenidos',
-          'history_score': 'Historial',
-          'semantic_score': 'Similitud Semántica'
-        };
-        return names[feature] || feature;
-      }
     };
   },
 };

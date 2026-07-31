@@ -73,8 +73,7 @@
 import { auth } from "../services/firebase";
 import { useAppStore } from "../store/app";
 import { useRouter } from "vue-router";
-import { ref, onMounted, onUnmounted } from "vue";
-import { fetchSystemStatus } from "../services/api";
+import { ref, onMounted } from "vue";
 
 export default {
   name: "HomeView",
@@ -84,19 +83,6 @@ export default {
     const router = useRouter();
     const userName = ref("Usuario");
     const isProcessingBackground = ref(false);
-
-    let pollingInterval = null;
-
-    const checkSystemStatus = async () => {
-      try {
-        const status = await fetchSystemStatus();
-        if (status) {
-          isProcessingBackground.value = status.is_processing;
-        }
-      } catch (error) {
-        console.error("Error cargando datos:", error);
-      }
-    };
 
     onMounted(async () => {
       // El usuario ya está autenticado (verificado por el router guard)
