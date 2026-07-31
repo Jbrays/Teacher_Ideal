@@ -1,0 +1,17 @@
+{
+  "hosting": {
+    "site": "vektora-t",
+    "public": "dist",
+    "ignore": [
+      "firebase.vektora-t.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}
